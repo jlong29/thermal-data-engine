@@ -1,0 +1,12 @@
+min_clip_frames: 3
+min_track_frames: 3
+high_confidence_threshold: 0.65
+jitter_threshold: 0.55
+edge_fraction_threshold: 0.35
+allow_empty_clip: false
+keep_reason_labels:
+  high_confidence: "high_confidence_track"
+  unstable_motion: "unstable_track_motion"
+  edge_activity: "edge_activity"
+  no_selection: "no_track_met_policy"
+

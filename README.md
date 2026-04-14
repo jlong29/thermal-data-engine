@@ -1,0 +1,94 @@
+# thermal-data-engine
+
+`thermal-data-engine` is the edge-side thermal video triage pipeline for OpenClaw. Phase 1 provides a runnable offline file-processing path that:
+
+- submits a local detection job to `vision_api`
+- loads structured detections from `detections.jsonl`
+- assigns simple IoU-based track IDs
+- summarizes tracks and applies a conservative clip-retention policy
+- writes a stable clip bundle contract
+- exposes local inspection helpers over saved artifacts
+
+## Scope
+
+Included in this repo:
+
+- edge-side ingestion and triage
+- tracking and track summaries
+- clip bundle packaging
+- local upload abstraction
+- inspectable local diagnostics
+
+Explicitly excluded:
+
+- model training
+- annotation or CVAT workflows
+- desktop orchestration
+- DeepStream control logic already owned by `vision_api`
+
+## Install
+
+```bash
+python3 -m pip install -e .[dev]
+```
+
+Parquet bundle output requires a backend such as `pyarrow`. The pipeline raises an explicit error if no parquet backend is available.
+
+## Configs
+
+- `configs/edge/default.yaml` defines the detector request, polling behavior, output roots, and upload defaults.
+- `configs/data/clip_policy.yaml` defines the initial clip selection thresholds.
+
+You can override either with CLI flags.
+
+## Run
+
+Start `vision_api` separately, then process a file:
+
+```bash
+python3 -m thermal_data_engine.cli process-file \
+  --source ~/.openclaw/workspace/datasets/incoming/example.mp4 \
+  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
+  --vision-api-url http://127.0.0.1:8000
+```
+
+Inspect saved bundles:
+
+```bash
+python3 -m thermal_data_engine.cli inspect recent --root ~/.openclaw/workspace/outputs/thermal_data_engine
+python3 -m thermal_data_engine.cli inspect ambiguous --root ~/.openclaw/workspace/outputs/thermal_data_engine
+python3 -m thermal_data_engine.cli inspect detector --root ~/.openclaw/workspace/outputs/thermal_data_engine
+python3 -m thermal_data_engine.cli inspect edge-status --root ~/.openclaw/workspace/outputs/thermal_data_engine
+```
+
+## Output layout
+
+Run records:
+
+```text
+<output_root>/runs/<run_id>/
+```
+
+Saved clip bundles:
+
+```text
+<output_root>/bundles/<clip_id>/
+├─ clip.mp4
+├─ detections.parquet
+├─ tracks.parquet
+└─ clip_manifest.json
+```
+
+Optional local upload copies:
+
+```text
+<output_root>/uploads/local/<clip_id>/
+```
+
+## Validation
+
+```bash
+python3 -m compileall src
+python3 -m pytest tests
+```
+
