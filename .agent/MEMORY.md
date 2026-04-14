@@ -1,7 +1,7 @@
 # .agent/MEMORY.md (scratch)
 
 **Task:** initial-edge-pipeline  
-**Last updated:** 2026-04-14 18:33 EDT
+**Last updated:** 2026-04-14 19:05 EDT
 
 ## Goal / status
 - Discovery complete enough to bootstrap Phase 1 implementation.
@@ -39,10 +39,11 @@
 - Added CLI support for `python3 -m thermal_data_engine.cli inspect runs --root ...`.
 - Expanded `edge-status` to include the latest run summary, so operators can immediately see whether the most recent run was selected and why.
 - Enriched `pipeline_summary.json` with quick-troubleshooting metadata: `source_path`, `model_version`, `frame_window`, `frame_count`, `detection_count`, `track_count`, and `job_detection_summary`.
-- Added test coverage for richer run summaries and updated README notes.
+- Added upload outcome directly into `pipeline_summary.json` and now always write `runs/<run_id>/upload_record.json`, even when a clip is skipped, so a single run record shows local handoff state.
+- Added test coverage for the richer run summary shape and updated README notes.
 - Validation: `python3 -m compileall src` and `python3 -m pytest tests` both passed after the change.
 
 ## Next steps
 - Decide whether the next increment should add real clip extraction instead of copying the bounded input clip as the saved `clip.mp4`.
 - Consider a lower-memory or alternate profile fallback for especially constrained NX conditions, without breaking the stable `vision_api` contract.
-- Consider surfacing upload status in `pipeline_summary.json` too, so a single run summary captures selection, artifact volume, and local handoff outcome.
+- Consider whether `inspect edge-status` should promote a small top-level upload summary, not just surface it inside `latest_run`.

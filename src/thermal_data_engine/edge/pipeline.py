@@ -134,6 +134,28 @@ def process_file(
     write_json(run_dir / "vision_job_accepted.json", accepted)
     write_json(run_dir / "vision_job_status.json", result.status_payload)
     write_json(run_dir / "vision_job_manifest.json", job_manifest)
+
+    upload_record = {
+        "status": "skipped",
+        "uri": "",
+        "backend": edge_config.upload.backend,
+    }
+    if selected:
+        write_bundle(
+            bundle_dir=bundle_dir,
+            source_clip_path=runtime_input_path,
+            manifest=manifest,
+            detections=tracked,
+            tracks=updated_tracks,
+        )
+        upload_record = upload_bundle(
+            bundle_dir=bundle_dir,
+            upload_root=upload_root,
+            config=edge_config.upload,
+            clip_id=clip_id,
+        )
+
+    write_json(run_dir / "upload_record.json", upload_record)
     write_json(
         run_dir / "pipeline_summary.json",
         {
@@ -150,25 +172,9 @@ def process_file(
             "detection_count": len(tracked),
             "track_count": len(updated_tracks),
             "job_detection_summary": detections_summary,
+            "upload": upload_record,
         },
     )
-
-    upload_record = {"status": "skipped", "uri": ""}
-    if selected:
-        write_bundle(
-            bundle_dir=bundle_dir,
-            source_clip_path=runtime_input_path,
-            manifest=manifest,
-            detections=tracked,
-            tracks=updated_tracks,
-        )
-        upload_record = upload_bundle(
-            bundle_dir=bundle_dir,
-            upload_root=upload_root,
-            config=edge_config.upload,
-            clip_id=clip_id,
-        )
-        write_json(run_dir / "upload_record.json", upload_record)
 
     return {
         "clip_id": clip_id,

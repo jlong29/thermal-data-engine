@@ -47,6 +47,7 @@ def test_inspection_helpers_read_saved_bundle_manifests(tmp_path):
                 "detection_count": 0,
                 "track_count": 0,
                 "job_detection_summary": {"fps": 9.0, "frame_count": 42},
+                "upload": {"status": "skipped", "uri": "", "backend": "local_copy"},
             }
         )
     )
@@ -73,3 +74,5 @@ def test_inspection_helpers_read_saved_bundle_manifests(tmp_path):
     assert status["latest_run"]["frame_count"] == 42
     assert status["latest_run"]["frame_window"]["fps"] == 9.0
     assert status["latest_run"]["job_detection_summary"]["frame_count"] == 42
+    assert status["latest_run"]["upload"]["status"] == "skipped"
+    assert status["latest_run"]["upload"]["backend"] == "local_copy"

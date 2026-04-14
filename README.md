@@ -73,7 +73,7 @@ Run records:
 <output_root>/runs/<run_id>/
 ```
 
-Each run directory includes a `pipeline_summary.json`, so non-selected runs remain inspectable even when no bundle is retained. The summary now carries frame-window metadata plus detection and track counts for quick troubleshooting.
+Each run directory includes a `pipeline_summary.json`, so non-selected runs remain inspectable even when no bundle is retained. The summary now carries frame-window metadata, detection and track counts, plus upload status for quick troubleshooting and local handoff checks.
 
 Saved clip bundles:
 
