@@ -14,6 +14,18 @@ def _bundle_manifests(root: Path) -> List[Dict[str, Any]]:
     return manifests
 
 
+def _run_summaries(root: Path) -> List[Dict[str, Any]]:
+    rows = []
+    run_root = root / "runs"
+    if not run_root.exists():
+        return rows
+    for summary_path in sorted(run_root.glob("*/pipeline_summary.json")):
+        payload = read_json(summary_path)
+        payload["run_dir"] = str(summary_path.parent)
+        rows.append(payload)
+    return rows
+
+
 def recent_bundles(root: str, limit: int = 5) -> List[Dict[str, Any]]:
     rows = sorted(_bundle_manifests(Path(root)), key=lambda item: item.get("created_at", ""), reverse=True)
     return rows[:limit]
@@ -62,20 +74,23 @@ def model_version(root: str) -> Dict[str, Any]:
     }
 
 
+def recent_runs(root: str, limit: int = 5) -> List[Dict[str, Any]]:
+    rows = sorted(_run_summaries(Path(root)), key=lambda item: item.get("run_id", ""), reverse=True)
+    return rows[:limit]
+
+
 def edge_status(root: str) -> Dict[str, Any]:
     root_path = Path(root)
     bundle_root = root_path / "bundles"
     run_root = root_path / "runs"
     upload_root = root_path / "uploads"
-    latest_run = None
-    if run_root.exists():
-        run_dirs = sorted([item for item in run_root.iterdir() if item.is_dir()], key=lambda item: item.name)
-        if run_dirs:
-            latest_run = str(run_dirs[-1])
+    runs = recent_runs(root, limit=1)
+    latest_run = runs[0] if runs else None
     return {
         "root_exists": root_path.exists(),
         "bundle_count": len(list(bundle_root.glob("*/clip_manifest.json"))) if bundle_root.exists() else 0,
         "run_count": len([item for item in run_root.iterdir() if item.is_dir()]) if run_root.exists() else 0,
         "upload_dir_exists": upload_root.exists(),
-        "latest_run_dir": latest_run,
+        "latest_run_dir": None if latest_run is None else latest_run.get("run_dir"),
+        "latest_run": latest_run,
     }

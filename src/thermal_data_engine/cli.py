@@ -8,6 +8,7 @@ from thermal_data_engine.agent_tools.inspect import (
     edge_status,
     model_version,
     recent_clips,
+    recent_runs,
 )
 from thermal_data_engine.edge.pipeline import process_file
 
@@ -42,6 +43,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
     status_parser = inspect_subparsers.add_parser("edge-status")
     status_parser.add_argument("--root", required=True)
+
+    runs_parser = inspect_subparsers.add_parser("runs")
+    runs_parser.add_argument("--root", required=True)
+    runs_parser.add_argument("--limit", type=int, default=5)
 
     return parser
 
@@ -80,6 +85,9 @@ def main() -> None:
             return
         if args.inspect_command == "edge-status":
             _print_json(edge_status(args.root))
+            return
+        if args.inspect_command == "runs":
+            _print_json(recent_runs(args.root, limit=args.limit))
             return
 
     parser.error("unsupported command")

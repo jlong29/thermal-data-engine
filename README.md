@@ -62,6 +62,7 @@ python3 -m thermal_data_engine.cli inspect recent --root ~/.openclaw/workspace/o
 python3 -m thermal_data_engine.cli inspect ambiguous --root ~/.openclaw/workspace/outputs/thermal_data_engine
 python3 -m thermal_data_engine.cli inspect detector --root ~/.openclaw/workspace/outputs/thermal_data_engine
 python3 -m thermal_data_engine.cli inspect edge-status --root ~/.openclaw/workspace/outputs/thermal_data_engine
+python3 -m thermal_data_engine.cli inspect runs --root ~/.openclaw/workspace/outputs/thermal_data_engine
 ```
 
 ## Output layout
@@ -71,6 +72,8 @@ Run records:
 ```text
 <output_root>/runs/<run_id>/
 ```
+
+Each run directory includes a `pipeline_summary.json`, so non-selected runs remain inspectable even when no bundle is retained. The summary now carries frame-window metadata plus detection and track counts for quick troubleshooting.
 
 Saved clip bundles:
 

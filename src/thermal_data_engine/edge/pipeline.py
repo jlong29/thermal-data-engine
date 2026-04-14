@@ -143,6 +143,13 @@ def process_file(
             "selection_reason": selection_reason,
             "vision_job_id": result.job_id,
             "bundle_dir": str(bundle_dir),
+            "source_path": str(source_path),
+            "model_version": edge_config.vision_request.model_profile,
+            "frame_window": frame_window,
+            "frame_count": len(frame_rows),
+            "detection_count": len(tracked),
+            "track_count": len(updated_tracks),
+            "job_detection_summary": detections_summary,
         },
     )
 
