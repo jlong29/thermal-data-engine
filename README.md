@@ -34,9 +34,12 @@ python3 -m pip install -e .[dev]
 
 Parquet bundle output requires a backend such as `pyarrow`. The pipeline raises an explicit error if no parquet backend is available.
 
+For the first real runs on the NX, the defaults avoid preview-video rendering because it adds extra memory pressure during detector bring-up.
+
 ## Configs
 
 - `configs/edge/default.yaml` defines the detector request, polling behavior, output roots, and upload defaults.
+  - The default runtime request is intentionally conservative for NX bring-up: `dataset_package` output with preview disabled and `max_frames: 600`.
 - `configs/data/clip_policy.yaml` defines the initial clip selection thresholds.
 
 You can override either with CLI flags.

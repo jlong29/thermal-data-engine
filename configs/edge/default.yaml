@@ -11,10 +11,10 @@ write_run_record: true
 vision_request:
   job_label_prefix: "thermal_edge"
   model_profile: "yolo11_person_v1"
-  output_mode: "dataset_package_plus_preview_video"
+  output_mode: "dataset_package"
   confidence_threshold: 0.25
   frame_stride: 5
-  max_frames: 2000
+  max_frames: 600
   start_time_sec: 0.0
   dataset_burst_gap_frames: 5
   generate_preview_video: false

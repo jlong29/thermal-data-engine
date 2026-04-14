@@ -6,7 +6,8 @@
 ## Goal / status
 - Discovery complete enough to bootstrap Phase 1 implementation.
 - Repo bootstrap and initial implementation are now in place.
-- Unit validation passed locally; end-to-end processing is waiting on a running local `vision_api` service.
+- End-to-end processing now works against local `vision_api`.
+- Current practical gap is not plumbing but policy/runtime refinement: the example clip completed with `no_detections`, so no bundle was retained.
 
 ## Repro commands
 - `git init && git checkout -b feature/initial-edge-pipeline`
@@ -27,12 +28,13 @@
 - `thermal-data-engine` did not yet have a `.git/` directory or `AGENTS.md`.
 - The outer workspace git still exists, but sibling repos under `src/` are independently versioned.
 - `rg` is unavailable on this host, so bounded discovery currently relies on `find`, `grep`, `sed`, and selective file reads.
+- Initial NX bring-up should avoid preview rendering. The earlier default `dataset_package_plus_preview_video` hit a DeepStream/NVVIC memory allocation failure; switching to `dataset_package` with a smaller `max_frames` allowed end-to-end completion.
 
 ## Verification run
-- Command(s): discovery reads, repo inspection, `git init`, branch creation, `python3 -m compileall src`, `python3 -m pytest tests`, `PYTHONPATH=src python3 -m thermal_data_engine.cli inspect edge-status --root ~/.openclaw/workspace/outputs/thermal_data_engine`.
-- Outcome(s): compileall passed, pytest passed (7 passed, 1 skipped because `pyarrow` is missing), CLI smoke test passed.
+- Command(s): discovery reads, repo inspection, `git init`, branch creation, `python3 -m compileall src`, `python3 -m pytest tests`, `python3 -m pip install --user pyarrow`, `PYTHONPATH=src python3 -m thermal_data_engine.cli inspect edge-status --root ~/.openclaw/workspace/outputs/thermal_data_engine`, `PYTHONPATH=src python3 -m thermal_data_engine.cli process-file --source ~/.openclaw/workspace/datasets/incoming/example.mp4 --output-root ~/.openclaw/workspace/outputs/thermal_data_engine --vision-api-url http://127.0.0.1:8000`.
+- Outcome(s): compileall passed, pytest passed, pyarrow installed, CLI smoke test passed, full end-to-end run passed. The successful run produced `runs/clip-8aa62360d128-20260414T214812Z/` and ended with `selected=false` / `selection_reason=no_detections`.
 
 ## Next steps
-- Start or point at a running local `vision_api` service and run an end-to-end `process-file` pass.
-- Install `pyarrow` if parquet bundle writing needs to be exercised end to end on this host.
+- Improve observability for non-selected runs so the operator can inspect detector output quality even when no bundle is retained.
 - Decide whether the next increment should add real clip extraction instead of copying the bounded input clip as the saved `clip.mp4`.
+- Consider a lower-memory or alternate profile fallback for especially constrained NX conditions, without breaking the stable `vision_api` contract.
