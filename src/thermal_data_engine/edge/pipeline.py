@@ -85,6 +85,7 @@ def process_file(
 
     clip_id = _clip_id_for_source(source_path)
     run_id = _run_id(clip_id)
+    run_started_at = utc_now_iso()
     run_dir = ensure_dir(run_root / run_id)
 
     client = VisionApiClient(edge_config.vision_api_url)
@@ -170,6 +171,8 @@ def process_file(
         {
             "clip_id": clip_id,
             "run_id": run_id,
+            "run_started_at": run_started_at,
+            "run_completed_at": utc_now_iso(),
             "selected": selected,
             "selection_reason": selection_reason,
             "vision_job_id": result.job_id,

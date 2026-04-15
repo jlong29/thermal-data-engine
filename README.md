@@ -74,7 +74,7 @@ Run records:
 <output_root>/runs/<run_id>/
 ```
 
-Each run directory includes a `pipeline_summary.json`, so non-selected runs remain inspectable even when no bundle is retained. The summary now carries frame-window metadata, detection and track counts, plus upload status for quick troubleshooting and local handoff checks. `inspect edge-status` now also rolls up recent upload outcomes, so operators can quickly see whether recent runs were uploaded, skipped, or failed.
+Each run directory includes a `pipeline_summary.json`, so non-selected runs remain inspectable even when no bundle is retained. The summary now carries run start/completion timestamps, frame-window metadata, detection and track counts, plus upload status for quick troubleshooting and local handoff checks. `inspect edge-status` now also rolls up recent upload outcomes, so operators can quickly see whether recent runs were uploaded, skipped, or failed.
 
 Saved clip bundles:
 

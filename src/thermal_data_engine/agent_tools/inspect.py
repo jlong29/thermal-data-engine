@@ -4,6 +4,10 @@ from typing import Any, Dict, List
 from thermal_data_engine.common.io import read_json
 
 
+def _created_at(item: Dict[str, Any]) -> str:
+    return item.get("created_at") or item.get("run_completed_at") or item.get("run_started_at") or item.get("run_id", "")
+
+
 def _bundle_manifests(root: Path) -> List[Dict[str, Any]]:
     manifests = []
     bundle_root = root / "bundles"
@@ -27,7 +31,7 @@ def _run_summaries(root: Path) -> List[Dict[str, Any]]:
 
 
 def recent_bundles(root: str, limit: int = 5) -> List[Dict[str, Any]]:
-    rows = sorted(_bundle_manifests(Path(root)), key=lambda item: item.get("created_at", ""), reverse=True)
+    rows = sorted(_bundle_manifests(Path(root)), key=_created_at, reverse=True)
     return rows[:limit]
 
 
@@ -64,7 +68,7 @@ def detector_summary(root: str) -> Dict[str, Any]:
 
 
 def model_version(root: str) -> Dict[str, Any]:
-    manifests = _bundle_manifests(Path(root))
+    manifests = sorted(_bundle_manifests(Path(root)), key=_created_at)
     model_versions = sorted({item.get("model_version", "unknown") for item in manifests})
     latest_model = manifests[-1].get("model_version", "unknown") if manifests else None
     return {
@@ -75,7 +79,7 @@ def model_version(root: str) -> Dict[str, Any]:
 
 
 def recent_runs(root: str, limit: int = 5) -> List[Dict[str, Any]]:
-    rows = sorted(_run_summaries(Path(root)), key=lambda item: item.get("run_id", ""), reverse=True)
+    rows = sorted(_run_summaries(Path(root)), key=_created_at, reverse=True)
     return rows[:limit]
 
 

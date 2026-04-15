@@ -46,6 +46,8 @@ def test_inspection_helpers_read_saved_bundle_manifests(tmp_path):
             {
                 "clip_id": "clip-c",
                 "run_id": "run-1",
+                "run_started_at": "2026-04-14T17:06:00Z",
+                "run_completed_at": "2026-04-14T17:06:30Z",
                 "selected": False,
                 "selection_reason": "no_detections",
                 "vision_job_id": "job-1",
@@ -103,3 +105,35 @@ def test_inspection_helpers_read_saved_bundle_manifests(tmp_path):
     assert status["clip_artifacts"]["clip_write_modes"]["source_copy"] == 2
     assert status["uploads"]["recent_run_count"] == 1
     assert status["uploads"]["upload_statuses"]["skipped"] == 1
+
+
+def test_recent_runs_prefers_run_completion_timestamp(tmp_path):
+    root = tmp_path / "outputs"
+    older_run_dir = root / "runs" / "run-z"
+    older_run_dir.mkdir(parents=True, exist_ok=True)
+    (older_run_dir / "pipeline_summary.json").write_text(
+        json.dumps(
+            {
+                "clip_id": "clip-older",
+                "run_id": "run-z",
+                "run_completed_at": "2026-04-14T17:00:00Z",
+                "selected": False,
+            }
+        )
+    )
+    newer_run_dir = root / "runs" / "run-a"
+    newer_run_dir.mkdir(parents=True, exist_ok=True)
+    (newer_run_dir / "pipeline_summary.json").write_text(
+        json.dumps(
+            {
+                "clip_id": "clip-newer",
+                "run_id": "run-a",
+                "run_completed_at": "2026-04-14T17:10:00Z",
+                "selected": True,
+            }
+        )
+    )
+
+    runs = recent_runs(str(root), limit=2)
+
+    assert [item["clip_id"] for item in runs] == ["clip-newer", "clip-older"]

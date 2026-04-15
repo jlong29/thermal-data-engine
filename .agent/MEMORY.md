@@ -1,7 +1,7 @@
 # .agent/MEMORY.md (scratch)
 
 **Task:** initial-edge-pipeline  
-**Last updated:** 2026-04-14 20:31 EDT
+**Last updated:** 2026-04-14 21:07 EDT
 
 ## Goal / status
 - Discovery complete enough to bootstrap Phase 1 implementation.
@@ -43,8 +43,11 @@
 - Committed the increment as `5794f2d` (`Add upload summary to edge status inspect`).
 - Added `configs/edge/corpus_verification.yaml` and used it to run the pipeline against `CorpusChristi_PM398_05Feb_11_20am.mp4` with `start_time_sec: 210.0` and `max_frames: 5000`, based on sampled-frame inspection and prior `vision_api` task-history clues.
 - Verification result: `vision_api` emitted `102` person detections across `102` frames in a 5-second bounded window; the thermal pipeline retained the result as bundle `clip-4c2b3b029292` with `track_count=18`, `detection_count=247`, and `selection_reason=edge_activity`.
+- Added `run_started_at` and `run_completed_at` to `pipeline_summary.json`, then switched inspect helpers to sort runs by those timestamps instead of lexicographic `run_id` order.
+- Tightened inspection coverage with a timestamp-ordering regression test and updated the README run-summary docs.
+- Validation: `python3 -m compileall src` and `python3 -m pytest tests` both passed after the change (11 passed). The existing pyarrow/pandas warning still appears, but the suite remains green.
 
 ## Next steps
 - Consider a lower-memory or alternate profile fallback for especially constrained NX conditions, without breaking the stable `vision_api` contract.
-- Consider whether `inspect edge-status` should promote a small top-level upload summary, not just surface it inside `latest_run`.
 - If a selected real run is available, verify `inspect clip-artifacts` against actual bundle output rather than only fixture-backed tests.
+- Consider whether run inspection should surface a concise top-level latest-selection summary in addition to the full latest run payload.
