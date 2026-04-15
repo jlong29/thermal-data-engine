@@ -91,6 +91,19 @@ def clip_artifact_summary(root: str) -> Dict[str, Any]:
     }
 
 
+def upload_summary(root: str, limit: int = 10) -> Dict[str, Any]:
+    counts = {}
+    recent = recent_runs(root, limit=limit)
+    for item in recent:
+        upload = item.get("upload") or {}
+        status = upload.get("status", "unknown")
+        counts[status] = counts.get(status, 0) + 1
+    return {
+        "recent_run_count": len(recent),
+        "upload_statuses": counts,
+    }
+
+
 def edge_status(root: str) -> Dict[str, Any]:
     root_path = Path(root)
     bundle_root = root_path / "bundles"
@@ -106,4 +119,5 @@ def edge_status(root: str) -> Dict[str, Any]:
         "latest_run_dir": None if latest_run is None else latest_run.get("run_dir"),
         "latest_run": latest_run,
         "clip_artifacts": clip_artifact_summary(root),
+        "uploads": upload_summary(root),
     }

@@ -8,6 +8,7 @@ from thermal_data_engine.agent_tools.inspect import (
     model_version,
     recent_clips,
     recent_runs,
+    upload_summary,
 )
 
 
@@ -75,6 +76,7 @@ def test_inspection_helpers_read_saved_bundle_manifests(tmp_path):
     summary = detector_summary(str(root))
     versions = model_version(str(root))
     clip_artifacts = clip_artifact_summary(str(root))
+    uploads = upload_summary(str(root), limit=5)
     runs = recent_runs(str(root), limit=5)
     status = edge_status(str(root))
 
@@ -84,6 +86,8 @@ def test_inspection_helpers_read_saved_bundle_manifests(tmp_path):
     assert summary["selected_count"] == 2
     assert versions["latest_model_version"] == "yolo11_person_v1"
     assert clip_artifacts["clip_write_modes"]["source_copy"] == 2
+    assert uploads["recent_run_count"] == 1
+    assert uploads["upload_statuses"]["skipped"] == 1
     assert runs[0]["clip_id"] == "clip-c"
     assert runs[0]["selected"] is False
     assert status["bundle_count"] == 2
@@ -97,3 +101,5 @@ def test_inspection_helpers_read_saved_bundle_manifests(tmp_path):
     assert status["latest_run"]["upload"]["status"] == "skipped"
     assert status["latest_run"]["upload"]["backend"] == "local_copy"
     assert status["clip_artifacts"]["clip_write_modes"]["source_copy"] == 2
+    assert status["uploads"]["recent_run_count"] == 1
+    assert status["uploads"]["upload_statuses"]["skipped"] == 1
