@@ -12,6 +12,7 @@ from thermal_data_engine.agent_tools.inspect import (
     recent_runs,
 )
 from thermal_data_engine.edge.pipeline import process_file
+from thermal_data_engine.edge.pipeline import smoke_test
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -24,6 +25,16 @@ def _build_parser() -> argparse.ArgumentParser:
     process_parser.add_argument("--policy-config", default="configs/data/clip_policy.yaml")
     process_parser.add_argument("--output-root", default="")
     process_parser.add_argument("--vision-api-url", default="")
+
+    smoke_parser = subparsers.add_parser("smoke-test")
+    smoke_parser.add_argument("--source", required=True)
+    smoke_parser.add_argument("--edge-config", default="configs/edge/default.yaml")
+    smoke_parser.add_argument("--policy-config", default="configs/data/clip_policy.yaml")
+    smoke_parser.add_argument("--output-root", default="")
+    smoke_parser.add_argument("--vision-api-url", default="")
+    smoke_parser.add_argument("--start-time-sec", type=float, default=0.0)
+    smoke_parser.add_argument("--max-duration-sec", type=float, default=3.0)
+    smoke_parser.add_argument("--frame-stride", type=int, default=10)
 
     inspect_parser = subparsers.add_parser("inspect")
     inspect_subparsers = inspect_parser.add_subparsers(dest="inspect_command", required=True)
@@ -70,6 +81,20 @@ def main() -> None:
             policy_config_path=args.policy_config,
             output_root_override=args.output_root,
             vision_api_url_override=args.vision_api_url,
+        )
+        _print_json(result)
+        return
+
+    if args.command == "smoke-test":
+        result = smoke_test(
+            source=args.source,
+            edge_config_path=args.edge_config,
+            policy_config_path=args.policy_config,
+            output_root_override=args.output_root,
+            vision_api_url_override=args.vision_api_url,
+            start_time_sec=args.start_time_sec,
+            max_duration_sec=args.max_duration_sec,
+            frame_stride=args.frame_stride,
         )
         _print_json(result)
         return

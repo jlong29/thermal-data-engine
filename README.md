@@ -56,6 +56,16 @@ python3 -m thermal_data_engine.cli process-file \
   --vision-api-url http://127.0.0.1:8000
 ```
 
+Run a fast bounded smoke test:
+
+```bash
+python3 -m thermal_data_engine.cli smoke-test \
+  --source ~/.openclaw/workspace/datasets/incoming/example.mp4 \
+  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
+  --vision-api-url http://127.0.0.1:8000 \
+  --max-duration-sec 3.0
+```
+
 Inspect saved bundles:
 
 ```bash

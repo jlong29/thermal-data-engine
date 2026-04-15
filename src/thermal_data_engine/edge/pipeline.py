@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from thermal_data_engine.common.config import load_edge_config, load_policy_config
-from thermal_data_engine.common.io import DATASETS_ROOT, ensure_dir, expand_path, path_relative_to_root, probe_video_metadata, read_jsonl, utc_now_iso, write_json
+from thermal_data_engine.common.io import DATASETS_ROOT, ensure_dir, expand_path, path_relative_to_root, probe_video_metadata, read_json, read_jsonl, utc_now_iso, write_json
 from thermal_data_engine.common.models import BundleManifest, EdgeConfig
 from thermal_data_engine.edge.bundle import write_bundle
 from thermal_data_engine.edge.detections import flatten_detection_records
@@ -109,12 +109,15 @@ def process_file(
     policy_config_path: str,
     output_root_override: str = "",
     vision_api_url_override: str = "",
+    edge_config_overrides: Dict[str, Any] = None,
 ) -> Dict[str, Any]:
     edge_overrides = {}
     if output_root_override:
         edge_overrides["output_root"] = output_root_override
     if vision_api_url_override:
         edge_overrides["vision_api_url"] = vision_api_url_override
+    if edge_config_overrides:
+        edge_overrides.update(edge_config_overrides)
 
     edge_config = load_edge_config(edge_config_path, overrides=edge_overrides)
     policy_config = load_policy_config(policy_config_path)
@@ -237,9 +240,63 @@ def process_file(
     return {
         "clip_id": clip_id,
         "run_id": run_id,
+        "run_dir": str(run_dir),
         "selected": selected,
         "selection_reason": selection_reason,
         "bundle_dir": str(bundle_dir),
         "vision_job_id": result.job_id,
+        "frame_count": len(frame_rows),
+        "detection_count": len(tracked),
+        "track_count": len(updated_tracks),
         "upload": upload_record,
+    }
+
+
+def smoke_test(
+    source: str,
+    edge_config_path: str,
+    policy_config_path: str,
+    output_root_override: str = "",
+    vision_api_url_override: str = "",
+    start_time_sec: float = 0.0,
+    max_duration_sec: float = 3.0,
+    frame_stride: int = 10,
+) -> Dict[str, Any]:
+    result = process_file(
+        source=source,
+        edge_config_path=edge_config_path,
+        policy_config_path=policy_config_path,
+        output_root_override=output_root_override,
+        vision_api_url_override=vision_api_url_override,
+        edge_config_overrides={
+            "vision_request": {
+                "output_mode": "dataset_package",
+                "generate_preview_video": False,
+                "max_frames": None,
+                "max_duration_sec": max_duration_sec,
+                "start_time_sec": start_time_sec,
+                "frame_stride": frame_stride,
+            }
+        },
+    )
+    pipeline_summary = read_json(Path(result["run_dir"]) / "pipeline_summary.json")
+    job_detection_summary = pipeline_summary.get("job_detection_summary") or {}
+    return {
+        "ok": True,
+        "source": source,
+        "run_id": result["run_id"],
+        "run_dir": result["run_dir"],
+        "vision_job_id": result["vision_job_id"],
+        "selected": result["selected"],
+        "selection_reason": result["selection_reason"],
+        "frame_count": result["frame_count"],
+        "detection_count": result["detection_count"],
+        "track_count": result["track_count"],
+        "requested_window": {
+            "start_time_sec": start_time_sec,
+            "max_duration_sec": max_duration_sec,
+            "frame_stride": frame_stride,
+        },
+        "job_detection_summary": job_detection_summary,
+        "windowing_decision": pipeline_summary.get("windowing_decision"),
     }
