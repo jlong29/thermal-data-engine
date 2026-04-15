@@ -1,86 +1,56 @@
 ## TASK_BRIEF
 
 ### Task
-- Bootstrap and implement the initial Phase 1 edge capture + triage pipeline for `thermal-data-engine`, using `vision_api` as the detector service and producing structured clip bundles plus inspection utilities.
+- Add a lower-memory or fallback runtime profile to `thermal-data-engine` so constrained Xavier NX bring-up has a safer bounded path when the default edge settings still hit memory pressure.
 
 ### Why this update
-- The repo is still effectively greenfield. It currently contains design drafts, agent templates, and no runnable implementation.
-- The broader Xavier NX bootstrap plan now needs a concrete edge-side data engine repo that can turn thermal video into downstream-friendly artifacts.
+- The new smoke-test workflow is in place and validated, so the next edge-side refinement is reducing bring-up fragility under tighter NX memory conditions.
+- Earlier real runs already exposed memory pressure (`Couldn't create nvvic Session: Cannot allocate memory`) when the runtime request was heavier than the device liked. A named lower-memory profile is the cleanest next incremental hedge.
 
 ### Fixed invariants (do not change)
 - Keep this repo edge-side only. Do not add training, CVAT, or desktop orchestration.
 - Keep `vision_api` as the detector/runtime boundary instead of re-embedding DeepStream control logic here.
-- Preserve stable bundle contracts: `clip.mp4`, `detections.parquet`, `tracks.parquet`, `clip_manifest.json`, with optional preview/debug artifacts.
-- Prefer bounded offline file processing for the initial implementation, with clear extension points for longer-running service use.
+- Preserve stable bundle contracts: `clip.mp4`, `detections.parquet`, `tracks.parquet`, `clip_manifest.json`.
 - Keep Python 3.8-compatible syntax and typing where practical.
+- Prefer bounded, inspectable validation flows over hidden background behavior.
 
 ### Goal
-- Deliver a runnable initial repo scaffold with config-driven offline ingestion, `vision_api` job submission + artifact consumption, simple tracking and clip selection, bundle writing, local upload abstraction, inspection tools, and focused tests/docs.
-- Extend verification beyond plumbing success by demonstrating that the pipeline can produce at least some raw detections on a known-positive sample (`datasets/incoming/CorpusChristi_PM398_05Feb_11_20am.mp4`), even before selection policy quality is tuned.
+- Provide an explicit lower-memory runtime path that operators and scheduled work can choose when the default profile is too heavy, without changing the stable edge-side API contract.
 
 ### Success criteria
-- [x] Repo has its own initialized structure, repo-specific `AGENTS.md`, packaging metadata, config files, and task scratch files.
-- [x] A file-based pipeline can submit work to local `vision_api`, consume `detections.jsonl`, assign track IDs, summarize tracks, and decide whether to keep a clip.
-- [x] Saved bundles follow the Phase 1 contract and include manifest + parquet artifacts.
-- [x] Inspection utilities can summarize recent clips, ambiguous clips, detector behavior, model version, and edge status from local artifacts.
-- [x] Focused tests cover schemas/serialization, tracking or summarization logic, selection policy, and bundle validity.
-- [x] Basic run documentation exists and the implementation passes meaningful local verification. Unit validation passed locally, an end-to-end `process-file` run completed successfully against local `vision_api`, and positive-detection verification was demonstrated on a known-busy sample.
-- [x] The pipeline produces at least some raw detections on `datasets/incoming/CorpusChristi_PM398_05Feb_11_20am.mp4`, or a concrete integration/runtime issue is identified and traced back through prior successful `vision_api` task history.
+- [ ] A named lower-memory or fallback edge config/profile exists.
+- [ ] The profile is documented clearly enough that operators know when to use it.
+- [ ] The smoke-test or bounded validation path can exercise the lower-memory profile.
+- [ ] Focused verification covers the new profile and its intended use.
 
 ### Relevant files (why)
-- `Design_draft.md` — repo mission, scope boundaries, file layout, required outputs, and verification expectations.
-- `TASK_BRIEF_draft.md` — concrete Phase 1 module list and expected interfaces.
-- `docs/agent/TASK_BRIEF_TEMPLATE.md` — repo-local task brief convention.
-- `docs/agent/MEMORY_TEMPLATE.md` — repo-local scratch memory convention.
-- `../vision_api/AGENTS.md` — runtime constraints, branch workflow, and narrow-tool philosophy to preserve at the integration boundary.
-- `../vision_api/app/main.py` — current local API surface for health and job submission.
-- `../vision_api/app/schemas.py` — request contract for `yolo-inference` job submission.
-- `../vision_api/app/runner.py` — shape of `detections.jsonl` and artifact outputs consumed here.
-- `../vision_api/app/settings.py` — workspace roots and output directories that thermal-data-engine should respect.
+- `configs/edge/default.yaml` — current conservative baseline
+- `configs/edge/` — likely home for a lower-memory profile variant
+- `src/thermal_data_engine/cli.py` — smoke-test and process-file entrypoints that should be able to use the profile cleanly
+- `README.md` — operator-facing profile guidance
+- `tests/` — focused regression or config coverage
 
 ### Refined Phase 2 Plan
-1) Instantiate the repo skeleton: `AGENTS.md`, package layout, configs, docs, dependency metadata, and CLI entrypoints.
-2) Implement shared schemas/config parsing plus a small `vision_api` client for local job submission and status polling.
-3) Implement the core edge pipeline: structured detection loading, simple IoU-based tracking, track summarization, clip policy, bundle writing, and local upload abstraction.
-4) Implement inspection utilities over saved bundles and run records.
-5) Add focused tests and run fast verification passes.
+1) Inspect which knobs are most likely to reduce memory pressure without breaking the stable contract.
+2) Add a named lower-memory profile and wire any minimal CLI support needed to exercise it.
+3) Update docs and run a bounded validation that proves the profile works as intended.
 
 ### Small change sets (execution order)
-1) Repo bootstrap + docs: `AGENTS.md`, `README.md`, `pyproject.toml`, `.gitignore`, package directories, default config files.
-2) Shared models + config + `vision_api` integration: `src/thermal_data_engine/common/*`, `src/thermal_data_engine/vision_api/*`.
-3) Edge pipeline core: `src/thermal_data_engine/edge/*`.
-4) Agent/inspection tools + CLI wrappers: `src/thermal_data_engine/agent_tools/*`, `src/thermal_data_engine/cli.py`.
-5) Tests + verification docs updates.
+1) Profile/config changes under `configs/edge/`.
+2) Minimal CLI or helper adjustments only if the profile is awkward to use otherwise.
+3) Docs and validation updates.
 
 ### Verification
-- Fast: `python3 -m compileall src` ✅
-- Targeted: `python3 -m pytest tests` ✅
-- CLI smoke: `PYTHONPATH=src python3 -m thermal_data_engine.cli inspect edge-status --root ~/.openclaw/workspace/outputs/thermal_data_engine` ✅
-- Full: `PYTHONPATH=src python3 -m thermal_data_engine.cli process-file --source ~/.openclaw/workspace/datasets/incoming/example.mp4 --output-root ~/.openclaw/workspace/outputs/thermal_data_engine --vision-api-url http://127.0.0.1:8000` ✅
-  - Result: completed end to end with run artifacts under `outputs/thermal_data_engine/runs/clip-8aa62360d128-20260414T214812Z/`
-  - Selection result: `selected=false`, `selection_reason=no_detections`
-  - Runtime lesson: safer NX defaults matter; preview rendering was disabled and `max_frames` reduced to `600` for bring-up.
-- Positive-detection verification: `PYTHONPATH=src python3 -m thermal_data_engine.cli process-file --source ~/.openclaw/workspace/datasets/incoming/CorpusChristi_PM398_05Feb_11_20am.mp4 --edge-config configs/edge/corpus_verification.yaml --output-root ~/.openclaw/workspace/outputs/thermal_data_engine --vision-api-url http://127.0.0.1:8000` ✅
-  - Result: completed end to end with run artifacts under `outputs/thermal_data_engine/runs/clip-4c2b3b029292-20260415T005348Z/`
-  - `vision_api` detection result: `frames_with_target_detections=102`, `total_target_detections=102` over a 5-second bounded window starting at `210.0s`
-  - Thermal pipeline result: `selected=true`, `selection_reason=edge_activity`, `track_count=18`, `detection_count=247`
-  - Root cause of the earlier empty run: this source reports `1000 fps`, so the safer bring-up default `max_frames: 600` only covered the first `0.6s` of the clip.
-  - Useful verification artifact: `configs/edge/corpus_verification.yaml` now expresses the known-good request as `max_duration_sec: 5.0` instead of an inflated frame-count override.
-- Auto-window verification: `PYTHONPATH=src python3 -m thermal_data_engine.cli process-file --source ~/.openclaw/workspace/datasets/incoming/CorpusChristi_PM398_05Feb_11_20am.mp4 --edge-config /tmp/corpus_auto_window.yaml --output-root ~/.openclaw/workspace/outputs/thermal_data_engine --vision-api-url http://127.0.0.1:8001` ✅
-  - Result: completed end to end with run artifacts under `outputs/thermal_data_engine/runs/clip-4c2b3b029292-20260415T014607Z/`
-  - Submitted request shape: `max_frames=null`, `max_duration_sec=5.0`, `start_time_sec=210.0`, even though the thermal config still set `max_frames: 600`
-  - Thermal pipeline result: `selected=true`, `selection_reason=edge_activity`, `track_count=18`, `detection_count=247`
-  - New behavior: suspiciously high encoded fps now triggers an automatic duration-bound override instead of requiring a manual `max_frames: 5000` tune.
+- Fast: `python3 -m compileall src`
+- Targeted: `python3 -m pytest tests`
+- Full: run the smoke-test or a bounded process-file command against a local sample using the lower-memory profile.
 
 ### Risks / gotchas
-- `vision_api` may not be running locally during validation, so the client and tests need graceful error handling and seams for fakes.
-- `vision_api` currently emits detections but not persistent track IDs, so this repo needs a simple local tracker for Phase 1.
-- Parquet writing may require optional runtime dependencies; keep errors explicit and tests focused.
-- The repo is new, so defaults should stay conservative and inspectable rather than over-optimized.
-- YAML config loading originally could not express an explicit `null` override because the dataclass loader treated `None` like a missing value. Duration-bound requests needed that fixed so configs can intentionally clear `max_frames`.
+- A lower-memory profile should stay inspectable and bounded, not become a vague collection of emergency flags.
+- The fallback profile should not quietly erode the stable bundle contract or detector boundary.
 
 ### Decision rule for defaults
-- Prefer the narrowest working default that preserves stable artifacts and can be validated locally. Defer richer realtime/service behavior unless the initial offline pipeline proves insufficient.
+- Keep the existing default profile as the normal path unless the lower-memory variant proves materially safer with acceptable validation quality.
 
 ### Deferred work note
-- Realtime stream ingestion, stronger MOT algorithms, remote upload backends, debug overlays, systemd units, and true OpenClaw runtime wiring may be scaffolded lightly but should not block the first runnable offline implementation.
+- Do not turn this task into model/backend redesign or cross-repo detector tuning unless validation proves the issue cannot be handled from the thermal-data-engine side.
