@@ -137,3 +137,36 @@ def test_recent_runs_prefers_run_completion_timestamp(tmp_path):
     runs = recent_runs(str(root), limit=2)
 
     assert [item["clip_id"] for item in runs] == ["clip-newer", "clip-older"]
+
+
+def test_recent_runs_falls_back_to_run_id_timestamp_suffix(tmp_path):
+    root = tmp_path / "outputs"
+    older_run_dir = root / "runs" / "clip-z-older"
+    older_run_dir.mkdir(parents=True, exist_ok=True)
+    (older_run_dir / "pipeline_summary.json").write_text(
+        json.dumps(
+            {
+                "clip_id": "clip-z",
+                "run_id": "clip-z-20260414T214812Z",
+                "selected": False,
+            }
+        )
+    )
+    newer_run_dir = root / "runs" / "clip-a-newer"
+    newer_run_dir.mkdir(parents=True, exist_ok=True)
+    (newer_run_dir / "pipeline_summary.json").write_text(
+        json.dumps(
+            {
+                "clip_id": "clip-a",
+                "run_id": "clip-a-20260415T005348Z",
+                "selected": True,
+            }
+        )
+    )
+
+    runs = recent_runs(str(root), limit=2)
+    status = edge_status(str(root))
+
+    assert [item["clip_id"] for item in runs] == ["clip-a", "clip-z"]
+    assert status["latest_run"]["clip_id"] == "clip-a"
+    assert status["latest_run"]["selected"] is True

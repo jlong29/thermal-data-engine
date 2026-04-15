@@ -1,11 +1,18 @@
+import re
 from pathlib import Path
 from typing import Any, Dict, List
 
 from thermal_data_engine.common.io import read_json
 
 
+_RUN_ID_TIMESTAMP_RE = re.compile(r"-(\d{8}T\d{6}Z)$")
+
+
 def _created_at(item: Dict[str, Any]) -> str:
-    return item.get("created_at") or item.get("run_completed_at") or item.get("run_started_at") or item.get("run_id", "")
+    run_id = item.get("run_id", "")
+    match = _RUN_ID_TIMESTAMP_RE.search(run_id)
+    run_id_timestamp = match.group(1) if match else ""
+    return item.get("created_at") or item.get("run_completed_at") or item.get("run_started_at") or run_id_timestamp or run_id
 
 
 def _bundle_manifests(root: Path) -> List[Dict[str, Any]]:

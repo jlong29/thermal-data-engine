@@ -1,7 +1,7 @@
 # .agent/MEMORY.md (scratch)
 
 **Task:** initial-edge-pipeline  
-**Last updated:** 2026-04-14 21:07 EDT
+**Last updated:** 2026-04-14 21:33 EDT
 
 ## Goal / status
 - Discovery complete enough to bootstrap Phase 1 implementation.
@@ -47,7 +47,12 @@
 - Tightened inspection coverage with a timestamp-ordering regression test and updated the README run-summary docs.
 - Validation: `python3 -m compileall src` and `python3 -m pytest tests` both passed after the change (11 passed). The existing pyarrow/pandas warning still appears, but the suite remains green.
 
+## Latest increment
+- Fixed legacy run ordering in `agent_tools.inspect`: when older `pipeline_summary.json` files lack `run_started_at` / `run_completed_at`, inspection now extracts the trailing `YYYYMMDDTHHMMSSZ` timestamp from `run_id` instead of sorting by the clip-id-prefixed run ID string.
+- Added a regression test covering mixed clip IDs with legacy timestamp-less summaries and verified that `inspect edge-status` now reports the real latest run from the current output tree (`clip-4c2b3b029292-20260415T005348Z`) instead of the older `clip-8aa...` run.
+- Validation: `python3 -m compileall src`, `python3 -m pytest tests` (12 passed), and `PYTHONPATH=src python3 -m thermal_data_engine.cli inspect edge-status --root /home/myclaw/.openclaw/workspace/outputs/thermal_data_engine` all passed after the fix.
+
 ## Next steps
 - Consider a lower-memory or alternate profile fallback for especially constrained NX conditions, without breaking the stable `vision_api` contract.
-- If a selected real run is available, verify `inspect clip-artifacts` against actual bundle output rather than only fixture-backed tests.
-- Consider whether run inspection should surface a concise top-level latest-selection summary in addition to the full latest run payload.
+- If useful, add a small inspect helper for "latest selected bundle" so operators can jump straight to the most recent retained clip rather than reading the full latest-run payload.
+- Consider whether upload inspection should distinguish legacy missing upload metadata from genuinely unknown runtime state.
