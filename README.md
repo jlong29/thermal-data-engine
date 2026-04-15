@@ -9,6 +9,52 @@
 - writes a stable clip bundle contract
 - exposes local inspection helpers over saved artifacts
 
+## Quick start
+
+If you want the shortest path from a fresh shell to a real smoke test, use two terminals.
+
+### Terminal 1: start `vision_api`
+
+```bash
+cd /home/myclaw/.openclaw/workspace/src/vision_api
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Optional health checks from another shell:
+
+```bash
+curl http://127.0.0.1:8000/v1/system/deepstream/status | python3 -m json.tool
+curl http://127.0.0.1:8000/v1/system/gpu/status | python3 -m json.tool
+```
+
+### Terminal 2: install and run `thermal-data-engine`
+
+```bash
+cd /home/myclaw/.openclaw/workspace/src/thermal-data-engine
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -e .[dev,parquet]
+python3 -m thermal_data_engine.cli smoke-test \
+  --source ~/.openclaw/workspace/datasets/incoming/example.mp4 \
+  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
+  --vision-api-url http://127.0.0.1:8000 \
+  --max-duration-sec 3.0
+```
+
+If you hit memory pressure during Xavier NX bring-up, retry with the lower-memory profile:
+
+```bash
+python3 -m thermal_data_engine.cli smoke-test \
+  --source ~/.openclaw/workspace/datasets/incoming/example.mp4 \
+  --edge-config configs/edge/low_memory.yaml \
+  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
+  --vision-api-url http://127.0.0.1:8000 \
+  --use-edge-window
+```
+
 ## Scope
 
 Included in this repo:
@@ -28,11 +74,30 @@ Explicitly excluded:
 
 ## Install
 
+Create and activate a local virtualenv first, then install the package in editable mode:
+
 ```bash
+cd /home/myclaw/.openclaw/workspace/src/thermal-data-engine
+python3 -m venv .venv
+source .venv/bin/activate
 python3 -m pip install -e .[dev]
 ```
 
-Parquet bundle output requires a backend such as `pyarrow`. The pipeline raises an explicit error if no parquet backend is available.
+After that, the CLI should resolve in the active shell:
+
+```bash
+python3 -m thermal_data_engine.cli --help
+# or
+thermal-data-engine --help
+```
+
+Parquet bundle output requires a backend such as `pyarrow`. Install it in the same environment when you want real bundle writing:
+
+```bash
+python3 -m pip install -e .[dev,parquet]
+```
+
+The pipeline raises an explicit error if no parquet backend is available.
 
 For the first real runs on the NX, the defaults avoid preview-video rendering because it adds extra memory pressure during detector bring-up.
 
@@ -50,7 +115,32 @@ You can override either with CLI flags.
 
 ## Run
 
-Start `vision_api` separately, then process a file:
+### Start `vision_api`
+
+`thermal-data-engine` expects the local `vision_api` FastAPI service to already be running.
+
+In a separate shell:
+
+```bash
+cd /home/myclaw/.openclaw/workspace/src/vision_api
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Optional preflight checks from another shell:
+
+```bash
+curl http://127.0.0.1:8000/v1/system/deepstream/status | python3 -m json.tool
+curl http://127.0.0.1:8000/v1/system/gpu/status | python3 -m json.tool
+```
+
+For more `vision_api` details, see `../vision_api/README.md`.
+
+### Run `thermal-data-engine`
+
+With the `thermal-data-engine` virtualenv active, process a file:
 
 ```bash
 python3 -m thermal_data_engine.cli process-file \
