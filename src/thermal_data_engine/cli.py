@@ -35,6 +35,7 @@ def _build_parser() -> argparse.ArgumentParser:
     smoke_parser.add_argument("--start-time-sec", type=float, default=0.0)
     smoke_parser.add_argument("--max-duration-sec", type=float, default=3.0)
     smoke_parser.add_argument("--frame-stride", type=int, default=10)
+    smoke_parser.add_argument("--use-edge-window", action="store_true")
 
     inspect_parser = subparsers.add_parser("inspect")
     inspect_subparsers = inspect_parser.add_subparsers(dest="inspect_command", required=True)
@@ -95,6 +96,7 @@ def main() -> None:
             start_time_sec=args.start_time_sec,
             max_duration_sec=args.max_duration_sec,
             frame_stride=args.frame_stride,
+            use_edge_window=args.use_edge_window,
         )
         _print_json(result)
         return

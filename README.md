@@ -41,6 +41,9 @@ For the first real runs on the NX, the defaults avoid preview-video rendering be
 - `configs/edge/default.yaml` defines the detector request, polling behavior, output roots, and upload defaults.
   - The default runtime request is intentionally conservative for NX bring-up: `dataset_package` output with preview disabled and `max_frames: 600`.
   - When a source reports suspiciously high encoded fps metadata, the pipeline can automatically switch from a frame-count bound to a short duration bound so validation does not collapse into a fraction of a second.
+- `configs/edge/low_memory.yaml` is the fallback Xavier NX bring-up profile.
+  - Use it when the default profile still trips memory pressure or codec-session allocation issues.
+  - It stays bounded by default with `max_frames: null`, `max_duration_sec: 3.0`, `frame_stride: 10`, and preview disabled.
 - `configs/data/clip_policy.yaml` defines the initial clip selection thresholds.
 
 You can override either with CLI flags.
@@ -65,6 +68,19 @@ python3 -m thermal_data_engine.cli smoke-test \
   --vision-api-url http://127.0.0.1:8000 \
   --max-duration-sec 3.0
 ```
+
+Exercise the lower-memory profile directly during bring-up:
+
+```bash
+python3 -m thermal_data_engine.cli smoke-test \
+  --source ~/.openclaw/workspace/datasets/incoming/example.mp4 \
+  --edge-config configs/edge/low_memory.yaml \
+  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
+  --vision-api-url http://127.0.0.1:8000 \
+  --use-edge-window
+```
+
+Use `--use-edge-window` when you want the smoke test to keep the bounded runtime window from the selected edge profile instead of replacing it with the default smoke-test window.
 
 Inspect saved bundles:
 

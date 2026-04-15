@@ -53,3 +53,13 @@ def test_load_policy_config_merges_defaults(tmp_path):
     assert policy.min_clip_frames == 10
     assert policy.high_confidence_threshold == 0.65
     assert policy.keep_reason_labels == {}
+
+
+def test_low_memory_edge_profile_is_bounded_and_preview_free():
+    config = load_edge_config("configs/edge/low_memory.yaml")
+
+    assert config.vision_request.output_mode == "dataset_package"
+    assert config.vision_request.generate_preview_video is False
+    assert config.vision_request.max_frames is None
+    assert config.vision_request.max_duration_sec == 3.0
+    assert config.vision_request.frame_stride == 10

@@ -261,23 +261,35 @@ def smoke_test(
     start_time_sec: float = 0.0,
     max_duration_sec: float = 3.0,
     frame_stride: int = 10,
+    use_edge_window: bool = False,
 ) -> Dict[str, Any]:
+    vision_request_overrides = {
+        "output_mode": "dataset_package",
+        "generate_preview_video": False,
+    }
+    requested_window = {
+        "mode": "edge_config" if use_edge_window else "smoke_override",
+        "start_time_sec": start_time_sec,
+        "max_duration_sec": max_duration_sec,
+        "frame_stride": frame_stride,
+    }
+    if not use_edge_window:
+        vision_request_overrides.update(
+            {
+                "max_frames": None,
+                "max_duration_sec": max_duration_sec,
+                "start_time_sec": start_time_sec,
+                "frame_stride": frame_stride,
+            }
+        )
+
     result = process_file(
         source=source,
         edge_config_path=edge_config_path,
         policy_config_path=policy_config_path,
         output_root_override=output_root_override,
         vision_api_url_override=vision_api_url_override,
-        edge_config_overrides={
-            "vision_request": {
-                "output_mode": "dataset_package",
-                "generate_preview_video": False,
-                "max_frames": None,
-                "max_duration_sec": max_duration_sec,
-                "start_time_sec": start_time_sec,
-                "frame_stride": frame_stride,
-            }
-        },
+        edge_config_overrides={"vision_request": vision_request_overrides},
     )
     pipeline_summary = read_json(Path(result["run_dir"]) / "pipeline_summary.json")
     job_detection_summary = pipeline_summary.get("job_detection_summary") or {}
@@ -292,11 +304,7 @@ def smoke_test(
         "frame_count": result["frame_count"],
         "detection_count": result["detection_count"],
         "track_count": result["track_count"],
-        "requested_window": {
-            "start_time_sec": start_time_sec,
-            "max_duration_sec": max_duration_sec,
-            "frame_stride": frame_stride,
-        },
+        "requested_window": requested_window,
         "job_detection_summary": job_detection_summary,
         "windowing_decision": pipeline_summary.get("windowing_decision"),
     }

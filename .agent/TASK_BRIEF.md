@@ -18,10 +18,10 @@
 - Provide an explicit lower-memory runtime path that operators and scheduled work can choose when the default profile is too heavy, without changing the stable edge-side API contract.
 
 ### Success criteria
-- [ ] A named lower-memory or fallback edge config/profile exists.
-- [ ] The profile is documented clearly enough that operators know when to use it.
-- [ ] The smoke-test or bounded validation path can exercise the lower-memory profile.
-- [ ] Focused verification covers the new profile and its intended use.
+- [x] A named lower-memory or fallback edge config/profile exists.
+- [x] The profile is documented clearly enough that operators know when to use it.
+- [x] The smoke-test or bounded validation path can exercise the lower-memory profile.
+- [x] Focused verification covers the new profile and its intended use.
 
 ### Relevant files (why)
 - `configs/edge/default.yaml` — current conservative baseline
@@ -33,7 +33,7 @@
 ### Refined Phase 2 Plan
 1) Inspect which knobs are most likely to reduce memory pressure without breaking the stable contract.
 2) Add a named lower-memory profile and wire any minimal CLI support needed to exercise it.
-3) Update docs and run a bounded validation that proves the profile works as intended.
+3) Update docs and run a bounded validation that proves the profile works as intended. (completed with targeted config/smoke tests)
 
 ### Small change sets (execution order)
 1) Profile/config changes under `configs/edge/`.
@@ -48,6 +48,7 @@
 ### Risks / gotchas
 - A lower-memory profile should stay inspectable and bounded, not become a vague collection of emergency flags.
 - The fallback profile should not quietly erode the stable bundle contract or detector boundary.
+- Smoke-test defaults still intentionally provide their own bounded window unless `--use-edge-window` is passed, so operators must opt in when they specifically want to validate a named profile's own runtime window.
 
 ### Decision rule for defaults
 - Keep the existing default profile as the normal path unless the lower-memory variant proves materially safer with acceptable validation quality.
