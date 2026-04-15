@@ -26,6 +26,24 @@ def test_load_edge_config_applies_nested_overrides(tmp_path):
     assert str(config.upload.local_root).endswith("uploads")
 
 
+def test_load_edge_config_preserves_explicit_nulls(tmp_path):
+    config_path = tmp_path / "edge.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                'vision_request:',
+                '  max_frames: null',
+                '  max_duration_sec: 5.0',
+            ]
+        )
+    )
+
+    config = load_edge_config(str(config_path))
+
+    assert config.vision_request.max_frames is None
+    assert config.vision_request.max_duration_sec == 5.0
+
+
 def test_load_policy_config_merges_defaults(tmp_path):
     policy_path = tmp_path / "policy.yaml"
     policy_path.write_text("min_clip_frames: 10\n")

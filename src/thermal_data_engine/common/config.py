@@ -34,9 +34,9 @@ def _dataclass_to_dict(instance: Any) -> Dict[str, Any]:
 def _build_dataclass(cls: Type[T], payload: Dict[str, Any]) -> T:
     kwargs = {}
     for item in fields(cls):
-        value = payload.get(item.name)
-        if value is None:
+        if item.name not in payload:
             continue
+        value = payload[item.name]
         nested_type = item.type
         if hasattr(nested_type, "__dataclass_fields__") and isinstance(value, dict):
             kwargs[item.name] = _build_dataclass(nested_type, value)

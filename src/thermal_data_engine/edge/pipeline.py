@@ -1,9 +1,9 @@
 import hashlib
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from thermal_data_engine.common.config import load_edge_config, load_policy_config
-from thermal_data_engine.common.io import DATASETS_ROOT, ensure_dir, expand_path, path_relative_to_root, read_jsonl, utc_now_iso, write_json
+from thermal_data_engine.common.io import DATASETS_ROOT, ensure_dir, expand_path, path_relative_to_root, probe_video_metadata, read_jsonl, utc_now_iso, write_json
 from thermal_data_engine.common.models import BundleManifest, EdgeConfig
 from thermal_data_engine.edge.bundle import write_bundle
 from thermal_data_engine.edge.detections import flatten_detection_records
@@ -29,21 +29,63 @@ def _vision_input_path(source_path: Path) -> str:
     return path_relative_to_root(source_path, DATASETS_ROOT).replace("\\", "/")
 
 
-def _build_job_payload(config: EdgeConfig, source_path: Path) -> Dict[str, Any]:
+def _resolve_windowing(config: EdgeConfig, source_path: Path) -> Dict[str, Any]:
     vision = config.vision_request
-    return {
+    payload_overrides = {
+        "max_frames": vision.max_frames,
+        "max_duration_sec": vision.max_duration_sec,
+    }
+    decision = {"mode": "configured", "reason": "direct_request", "source_probe": None}
+
+    try:
+        source_probe = probe_video_metadata(source_path)
+    except Exception as exc:
+        decision = {"mode": "configured", "reason": "probe_failed", "source_probe": None, "probe_error": str(exc)}
+        return {"payload_overrides": payload_overrides, "decision": decision}
+
+    decision["source_probe"] = source_probe
+    fps = source_probe.get("fps")
+    min_duration_sec = vision.min_duration_sec_on_suspicious_fps
+    if (
+        vision.max_duration_sec is None
+        and vision.max_frames is not None
+        and fps is not None
+        and fps >= vision.suspicious_fps_threshold
+        and min_duration_sec > 0
+    ):
+        implied_window_sec = float(vision.max_frames) / float(fps)
+        if implied_window_sec < min_duration_sec:
+            payload_overrides["max_frames"] = None
+            payload_overrides["max_duration_sec"] = min_duration_sec
+            decision = {
+                "mode": "auto_duration_override",
+                "reason": "suspicious_high_fps",
+                "source_probe": source_probe,
+                "implied_window_sec": implied_window_sec,
+                "min_duration_sec_on_suspicious_fps": min_duration_sec,
+            }
+
+    return {"payload_overrides": payload_overrides, "decision": decision}
+
+
+def _build_job_payload(config: EdgeConfig, source_path: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    vision = config.vision_request
+    windowing = _resolve_windowing(config, source_path)
+    payload = {
         "job_label": "{}_{}".format(vision.job_label_prefix, source_path.stem),
         "input": {"kind": "video_file", "path": _vision_input_path(source_path)},
         "model_profile": vision.model_profile,
         "output_mode": vision.output_mode,
         "confidence_threshold": vision.confidence_threshold,
         "frame_stride": vision.frame_stride,
-        "max_frames": vision.max_frames,
+        "max_frames": windowing["payload_overrides"]["max_frames"],
+        "max_duration_sec": windowing["payload_overrides"]["max_duration_sec"],
         "start_time_sec": vision.start_time_sec,
         "dataset_burst_gap_frames": vision.dataset_burst_gap_frames,
         "generate_preview_video": vision.generate_preview_video,
         "overwrite": vision.overwrite,
     }
+    return payload, windowing
 
 
 def _resolve_frame_window(frame_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -89,7 +131,7 @@ def process_file(
     run_dir = ensure_dir(run_root / run_id)
 
     client = VisionApiClient(edge_config.vision_api_url)
-    job_payload = _build_job_payload(edge_config, source_path)
+    job_payload, windowing = _build_job_payload(edge_config, source_path)
     accepted = client.submit_yolo_job(job_payload)
     result = client.wait_for_job(
         accepted["job_id"],
@@ -133,6 +175,7 @@ def process_file(
     )
 
     write_json(run_dir / "vision_job_accepted.json", accepted)
+    write_json(run_dir / "vision_job_request.json", job_payload)
     write_json(run_dir / "vision_job_status.json", result.status_payload)
     write_json(run_dir / "vision_job_manifest.json", job_manifest)
 
@@ -183,6 +226,8 @@ def process_file(
             "frame_count": len(frame_rows),
             "detection_count": len(tracked),
             "track_count": len(updated_tracks),
+            "vision_job_request": job_payload,
+            "windowing_decision": windowing,
             "job_detection_summary": detections_summary,
             "bundle": bundle_record,
             "upload": upload_record,

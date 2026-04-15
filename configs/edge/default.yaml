@@ -15,7 +15,10 @@ vision_request:
   confidence_threshold: 0.25
   frame_stride: 5
   max_frames: 600
+  max_duration_sec: null
   start_time_sec: 0.0
+  suspicious_fps_threshold: 120.0
+  min_duration_sec_on_suspicious_fps: 5.0
   dataset_burst_gap_frames: 5
   generate_preview_video: false
   overwrite: false
@@ -27,4 +30,3 @@ upload:
   enabled: false
   backend: "local_copy"
   local_root: ""
-

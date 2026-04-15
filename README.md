@@ -40,6 +40,7 @@ For the first real runs on the NX, the defaults avoid preview-video rendering be
 
 - `configs/edge/default.yaml` defines the detector request, polling behavior, output roots, and upload defaults.
   - The default runtime request is intentionally conservative for NX bring-up: `dataset_package` output with preview disabled and `max_frames: 600`.
+  - When a source reports suspiciously high encoded fps metadata, the pipeline can automatically switch from a frame-count bound to a short duration bound so validation does not collapse into a fraction of a second.
 - `configs/data/clip_policy.yaml` defines the initial clip selection thresholds.
 
 You can override either with CLI flags.

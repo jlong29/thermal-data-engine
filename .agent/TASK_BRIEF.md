@@ -65,13 +65,19 @@
   - `vision_api` detection result: `frames_with_target_detections=102`, `total_target_detections=102` over a 5-second bounded window starting at `210.0s`
   - Thermal pipeline result: `selected=true`, `selection_reason=edge_activity`, `track_count=18`, `detection_count=247`
   - Root cause of the earlier empty run: this source reports `1000 fps`, so the safer bring-up default `max_frames: 600` only covered the first `0.6s` of the clip.
-  - Useful verification artifact: `configs/edge/corpus_verification.yaml` captures the known-good bounded request shape for this sample.
+  - Useful verification artifact: `configs/edge/corpus_verification.yaml` now expresses the known-good request as `max_duration_sec: 5.0` instead of an inflated frame-count override.
+- Auto-window verification: `PYTHONPATH=src python3 -m thermal_data_engine.cli process-file --source ~/.openclaw/workspace/datasets/incoming/CorpusChristi_PM398_05Feb_11_20am.mp4 --edge-config /tmp/corpus_auto_window.yaml --output-root ~/.openclaw/workspace/outputs/thermal_data_engine --vision-api-url http://127.0.0.1:8001` ✅
+  - Result: completed end to end with run artifacts under `outputs/thermal_data_engine/runs/clip-4c2b3b029292-20260415T014607Z/`
+  - Submitted request shape: `max_frames=null`, `max_duration_sec=5.0`, `start_time_sec=210.0`, even though the thermal config still set `max_frames: 600`
+  - Thermal pipeline result: `selected=true`, `selection_reason=edge_activity`, `track_count=18`, `detection_count=247`
+  - New behavior: suspiciously high encoded fps now triggers an automatic duration-bound override instead of requiring a manual `max_frames: 5000` tune.
 
 ### Risks / gotchas
 - `vision_api` may not be running locally during validation, so the client and tests need graceful error handling and seams for fakes.
 - `vision_api` currently emits detections but not persistent track IDs, so this repo needs a simple local tracker for Phase 1.
 - Parquet writing may require optional runtime dependencies; keep errors explicit and tests focused.
 - The repo is new, so defaults should stay conservative and inspectable rather than over-optimized.
+- YAML config loading originally could not express an explicit `null` override because the dataclass loader treated `None` like a missing value. Duration-bound requests needed that fixed so configs can intentionally clear `max_frames`.
 
 ### Decision rule for defaults
 - Prefer the narrowest working default that preserves stable artifacts and can be validated locally. Defer richer realtime/service behavior unless the initial offline pipeline proves insufficient.

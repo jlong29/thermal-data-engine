@@ -1,8 +1,9 @@
 import json
 import os
+import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Optional
 
 
 WORKSPACE_ROOT = Path.home() / ".openclaw" / "workspace"
@@ -56,6 +57,64 @@ def path_relative_to_root(path: Path, root: Path) -> str:
         return str(resolved_path.relative_to(resolved_root))
     except ValueError:
         raise ValueError("PATH_OUTSIDE_ROOT: {} not under {}".format(str(resolved_path), str(resolved_root)))
+
+
+def _parse_ffprobe_fps(value: Optional[str]) -> Optional[float]:
+    if not value:
+        return None
+    if "/" in value:
+        numerator, denominator = value.split("/", 1)
+        try:
+            numerator_value = float(numerator)
+            denominator_value = float(denominator)
+        except ValueError:
+            return None
+        if denominator_value == 0:
+            return None
+        return numerator_value / denominator_value
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def probe_video_metadata(path: Path) -> Dict[str, Any]:
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height,r_frame_rate,avg_frame_rate,nb_frames,duration",
+        "-of",
+        "json",
+        str(path),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError("FFPROBE_FAILED: {}".format(proc.stderr.strip() or proc.returncode))
+
+    payload = json.loads(proc.stdout or "{}")
+    streams = payload.get("streams") or []
+    if not streams:
+        return {}
+
+    stream = streams[0]
+    avg_fps = _parse_ffprobe_fps(stream.get("avg_frame_rate"))
+    raw_fps = _parse_ffprobe_fps(stream.get("r_frame_rate"))
+    duration = stream.get("duration")
+    nb_frames = stream.get("nb_frames")
+
+    return {
+        "width": int(stream.get("width", 0) or 0),
+        "height": int(stream.get("height", 0) or 0),
+        "fps": avg_fps or raw_fps,
+        "avg_frame_rate": stream.get("avg_frame_rate"),
+        "r_frame_rate": stream.get("r_frame_rate"),
+        "duration_sec": None if duration in (None, "") else float(duration),
+        "nb_frames": None if nb_frames in (None, "") else int(nb_frames),
+    }
 
 
 def parquet_backend():

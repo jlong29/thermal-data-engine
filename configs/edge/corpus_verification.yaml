@@ -14,7 +14,8 @@ vision_request:
   output_mode: "dataset_package"
   confidence_threshold: 0.25
   frame_stride: 5
-  max_frames: 5000
+  max_frames: null
+  max_duration_sec: 5.0
   start_time_sec: 210.0
   dataset_burst_gap_frames: 5
   generate_preview_video: false

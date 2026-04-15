@@ -31,6 +31,7 @@
 - `rg` is unavailable on this host, so bounded discovery currently relies on `find`, `grep`, `sed`, and selective file reads.
 - Initial NX bring-up should avoid preview rendering. The earlier default `dataset_package_plus_preview_video` hit a DeepStream/NVVIC memory allocation failure; switching to `dataset_package` with a smaller `max_frames` allowed end-to-end completion.
 - `CorpusChristi_PM398_05Feb_11_20am.mp4` reports `1000 fps`, so bounded verification windows must be chosen carefully. With that metadata, `max_frames: 600` only covers `0.6s`, which explained the first empty run.
+- The config loader originally could not preserve explicit YAML `null`, which mattered once we wanted configs to intentionally clear `max_frames` in favor of a duration bound.
 
 ## Verification run
 - Command(s): discovery reads, repo inspection, `git init`, branch creation, `python3 -m compileall src`, `python3 -m pytest tests`, `python3 -m pip install --user pyarrow`, `PYTHONPATH=src python3 -m thermal_data_engine.cli inspect edge-status --root ~/.openclaw/workspace/outputs/thermal_data_engine`, `PYTHONPATH=src python3 -m thermal_data_engine.cli process-file --source ~/.openclaw/workspace/datasets/incoming/example.mp4 --output-root ~/.openclaw/workspace/outputs/thermal_data_engine --vision-api-url http://127.0.0.1:8000`.
@@ -51,6 +52,12 @@
 - Fixed legacy run ordering in `agent_tools.inspect`: when older `pipeline_summary.json` files lack `run_started_at` / `run_completed_at`, inspection now extracts the trailing `YYYYMMDDTHHMMSSZ` timestamp from `run_id` instead of sorting by the clip-id-prefixed run ID string.
 - Added a regression test covering mixed clip IDs with legacy timestamp-less summaries and verified that `inspect edge-status` now reports the real latest run from the current output tree (`clip-4c2b3b029292-20260415T005348Z`) instead of the older `clip-8aa...` run.
 - Validation: `python3 -m compileall src`, `python3 -m pytest tests` (12 passed), and `PYTHONPATH=src python3 -m thermal_data_engine.cli inspect edge-status --root /home/myclaw/.openclaw/workspace/outputs/thermal_data_engine` all passed after the fix.
+
+## Latest increment
+- Added additive `max_duration_sec` support at the `vision_api` boundary and taught the thermal pipeline to auto-switch suspiciously high-fps sources from a brittle frame-count bound to a short duration bound.
+- Added a small `ffprobe` metadata probe in `common/io.py`, recorded submitted job requests in run artifacts, and now write the windowing decision into `pipeline_summary.json` for inspection.
+- Updated `configs/edge/corpus_verification.yaml` to use `max_duration_sec: 5.0` instead of `max_frames: 5000`, and added focused regression coverage for config null handling plus the suspicious-fps auto-windowing behavior.
+- Validation: `python3 -m pytest tests/test_config.py tests/test_pipeline.py` passed, and a real Corpus Christi run using a config that still set `max_frames: 600` auto-submitted `max_frames=null`, `max_duration_sec=5.0`, then completed as `selected=true` with `detection_count=247` and `track_count=18`.
 
 ## Next steps
 - Consider a lower-memory or alternate profile fallback for especially constrained NX conditions, without breaking the stable `vision_api` contract.
