@@ -140,14 +140,23 @@ def process_file(
         "uri": "",
         "backend": edge_config.upload.backend,
     }
+    bundle_record = {
+        "status": "not_written",
+        "clip_write_mode": None,
+    }
     if selected:
-        write_bundle(
+        bundle_paths = write_bundle(
             bundle_dir=bundle_dir,
             source_clip_path=runtime_input_path,
             manifest=manifest,
             detections=tracked,
             tracks=updated_tracks,
         )
+        bundle_record = {
+            "status": "written",
+            "bundle_dir": str(bundle_dir),
+            "clip_write_mode": bundle_paths.get("clip_write_mode"),
+        }
         upload_record = upload_bundle(
             bundle_dir=bundle_dir,
             upload_root=upload_root,
@@ -172,6 +181,7 @@ def process_file(
             "detection_count": len(tracked),
             "track_count": len(updated_tracks),
             "job_detection_summary": detections_summary,
+            "bundle": bundle_record,
             "upload": upload_record,
         },
     )

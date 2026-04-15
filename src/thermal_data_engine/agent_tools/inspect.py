@@ -79,6 +79,18 @@ def recent_runs(root: str, limit: int = 5) -> List[Dict[str, Any]]:
     return rows[:limit]
 
 
+def clip_artifact_summary(root: str) -> Dict[str, Any]:
+    counts = {}
+    for item in _bundle_manifests(Path(root)):
+        clip_artifact = item.get("extra", {}).get("clip_artifact", {})
+        mode = clip_artifact.get("write_mode", "unknown")
+        counts[mode] = counts.get(mode, 0) + 1
+    return {
+        "bundle_count": sum(counts.values()),
+        "clip_write_modes": counts,
+    }
+
+
 def edge_status(root: str) -> Dict[str, Any]:
     root_path = Path(root)
     bundle_root = root_path / "bundles"
@@ -93,4 +105,5 @@ def edge_status(root: str) -> Dict[str, Any]:
         "upload_dir_exists": upload_root.exists(),
         "latest_run_dir": None if latest_run is None else latest_run.get("run_dir"),
         "latest_run": latest_run,
+        "clip_artifacts": clip_artifact_summary(root),
     }

@@ -1,7 +1,7 @@
 # .agent/MEMORY.md (scratch)
 
 **Task:** initial-edge-pipeline  
-**Last updated:** 2026-04-14 19:05 EDT
+**Last updated:** 2026-04-14 20:02 EDT
 
 ## Goal / status
 - Discovery complete enough to bootstrap Phase 1 implementation.
@@ -35,15 +35,13 @@
 - Outcome(s): compileall passed, pytest passed, pyarrow installed, CLI smoke test passed, full end-to-end run passed. The successful run produced `runs/clip-8aa62360d128-20260414T214812Z/` and ended with `selected=false` / `selection_reason=no_detections`.
 
 ## Latest increment
-- Added run-level inspection in `agent_tools.inspect` by reading `runs/*/pipeline_summary.json`.
-- Added CLI support for `python3 -m thermal_data_engine.cli inspect runs --root ...`.
-- Expanded `edge-status` to include the latest run summary, so operators can immediately see whether the most recent run was selected and why.
-- Enriched `pipeline_summary.json` with quick-troubleshooting metadata: `source_path`, `model_version`, `frame_window`, `frame_count`, `detection_count`, `track_count`, and `job_detection_summary`.
-- Added upload outcome directly into `pipeline_summary.json` and now always write `runs/<run_id>/upload_record.json`, even when a clip is skipped, so a single run record shows local handoff state.
-- Added test coverage for the richer run summary shape and updated README notes.
-- Validation: `python3 -m compileall src` and `python3 -m pytest tests` both passed after the change.
+- Surfaced bundle clip-write provenance in stable local artifacts: `edge.bundle.write_bundle()` now records `extra.clip_artifact.write_mode` plus the bundle source path in `clip_manifest.json`, and returns the mode to the caller.
+- Extended `edge.pipeline` run summaries with a `bundle` section so selected runs explicitly report whether a bundle was written and whether `clip.mp4` came from segment extraction or source-copy fallback.
+- Added `agent_tools.inspect.clip_artifact_summary()` and a matching `inspect clip-artifacts` CLI subcommand so operators can quickly see how bundles were produced without opening videos by hand.
+- Updated focused tests for bundle metadata and inspect output, and refreshed README examples/docs for the new inspect surface.
+- Validation: `python3 -m compileall src` and `python3 -m pytest tests` both passed after the change (10 passed). Pytest still emits the existing pyarrow/pandas integration warning, but tests remain green.
 
 ## Next steps
-- Decide whether the next increment should add real clip extraction instead of copying the bounded input clip as the saved `clip.mp4`.
 - Consider a lower-memory or alternate profile fallback for especially constrained NX conditions, without breaking the stable `vision_api` contract.
 - Consider whether `inspect edge-status` should promote a small top-level upload summary, not just surface it inside `latest_run`.
+- If a selected real run is available, verify `inspect clip-artifacts` against actual bundle output rather than only fixture-backed tests.

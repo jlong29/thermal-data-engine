@@ -1,9 +1,24 @@
 import json
 
-from thermal_data_engine.agent_tools.inspect import ambiguous_clips, detector_summary, edge_status, model_version, recent_clips, recent_runs
+from thermal_data_engine.agent_tools.inspect import (
+    ambiguous_clips,
+    clip_artifact_summary,
+    detector_summary,
+    edge_status,
+    model_version,
+    recent_clips,
+    recent_runs,
+)
 
 
-def _write_manifest(path, created_at, selection_reason, selected=True, model_version_value="yolo11_person_v1"):
+def _write_manifest(
+    path,
+    created_at,
+    selection_reason,
+    selected=True,
+    model_version_value="yolo11_person_v1",
+    clip_write_mode="source_copy",
+):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
@@ -13,6 +28,7 @@ def _write_manifest(path, created_at, selection_reason, selected=True, model_ver
                 "selection_reason": selection_reason,
                 "selected": selected,
                 "model_version": model_version_value,
+                "extra": {"clip_artifact": {"write_mode": clip_write_mode}},
             }
         )
     )
@@ -47,6 +63,7 @@ def test_inspection_helpers_read_saved_bundle_manifests(tmp_path):
                 "detection_count": 0,
                 "track_count": 0,
                 "job_detection_summary": {"fps": 9.0, "frame_count": 42},
+                "bundle": {"status": "not_written", "clip_write_mode": None},
                 "upload": {"status": "skipped", "uri": "", "backend": "local_copy"},
             }
         )
@@ -57,6 +74,7 @@ def test_inspection_helpers_read_saved_bundle_manifests(tmp_path):
     ambiguous = ambiguous_clips(str(root), limit=5)
     summary = detector_summary(str(root))
     versions = model_version(str(root))
+    clip_artifacts = clip_artifact_summary(str(root))
     runs = recent_runs(str(root), limit=5)
     status = edge_status(str(root))
 
@@ -65,6 +83,7 @@ def test_inspection_helpers_read_saved_bundle_manifests(tmp_path):
     assert summary["bundle_count"] == 2
     assert summary["selected_count"] == 2
     assert versions["latest_model_version"] == "yolo11_person_v1"
+    assert clip_artifacts["clip_write_modes"]["source_copy"] == 2
     assert runs[0]["clip_id"] == "clip-c"
     assert runs[0]["selected"] is False
     assert status["bundle_count"] == 2
@@ -74,5 +93,7 @@ def test_inspection_helpers_read_saved_bundle_manifests(tmp_path):
     assert status["latest_run"]["frame_count"] == 42
     assert status["latest_run"]["frame_window"]["fps"] == 9.0
     assert status["latest_run"]["job_detection_summary"]["frame_count"] == 42
+    assert status["latest_run"]["bundle"]["status"] == "not_written"
     assert status["latest_run"]["upload"]["status"] == "skipped"
     assert status["latest_run"]["upload"]["backend"] == "local_copy"
+    assert status["clip_artifacts"]["clip_write_modes"]["source_copy"] == 2

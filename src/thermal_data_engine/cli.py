@@ -4,6 +4,7 @@ from typing import Any
 
 from thermal_data_engine.agent_tools.inspect import (
     ambiguous_clips,
+    clip_artifact_summary,
     detector_summary,
     edge_status,
     model_version,
@@ -40,6 +41,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     detector_parser = inspect_subparsers.add_parser("detector")
     detector_parser.add_argument("--root", required=True)
+
+    clip_artifacts_parser = inspect_subparsers.add_parser("clip-artifacts")
+    clip_artifacts_parser.add_argument("--root", required=True)
 
     status_parser = inspect_subparsers.add_parser("edge-status")
     status_parser.add_argument("--root", required=True)
@@ -79,6 +83,9 @@ def main() -> None:
             return
         if args.inspect_command == "detector":
             _print_json(detector_summary(args.root))
+            return
+        if args.inspect_command == "clip-artifacts":
+            _print_json(clip_artifact_summary(args.root))
             return
         if args.inspect_command == "model-version":
             _print_json(model_version(args.root))

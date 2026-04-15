@@ -61,6 +61,7 @@ Inspect saved bundles:
 python3 -m thermal_data_engine.cli inspect recent --root ~/.openclaw/workspace/outputs/thermal_data_engine
 python3 -m thermal_data_engine.cli inspect ambiguous --root ~/.openclaw/workspace/outputs/thermal_data_engine
 python3 -m thermal_data_engine.cli inspect detector --root ~/.openclaw/workspace/outputs/thermal_data_engine
+python3 -m thermal_data_engine.cli inspect clip-artifacts --root ~/.openclaw/workspace/outputs/thermal_data_engine
 python3 -m thermal_data_engine.cli inspect edge-status --root ~/.openclaw/workspace/outputs/thermal_data_engine
 python3 -m thermal_data_engine.cli inspect runs --root ~/.openclaw/workspace/outputs/thermal_data_engine
 ```
@@ -85,6 +86,10 @@ Saved clip bundles:
 └─ clip_manifest.json
 ```
 
+When a run has a bounded `start_ts` and `end_ts`, bundle writing now tries to cut `clip.mp4` down to that observed time window with `ffmpeg`. If segment extraction is unavailable or fails, it falls back to copying the runtime input so the stable bundle contract still holds.
+
+Bundle manifests now record `extra.clip_artifact.write_mode`, and `inspect clip-artifacts` summarizes how often bundles were written by segment extraction versus source-copy fallback.
+
 Optional local upload copies:
 
 ```text
@@ -97,4 +102,3 @@ Optional local upload copies:
 python3 -m compileall src
 python3 -m pytest tests
 ```
-
