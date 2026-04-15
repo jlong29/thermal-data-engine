@@ -19,6 +19,7 @@ If you want the shortest path from a fresh shell to a real smoke test, use two t
 cd /home/myclaw/.openclaw/workspace/src/vision_api
 python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
@@ -36,7 +37,8 @@ curl http://127.0.0.1:8000/v1/system/gpu/status | python3 -m json.tool
 cd /home/myclaw/.openclaw/workspace/src/thermal-data-engine
 python3 -m venv .venv
 source .venv/bin/activate
-python3 -m pip install -e .[dev,parquet]
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -e .[dev,parquet]
 python3 -m thermal_data_engine.cli smoke-test \
   --source ~/.openclaw/workspace/datasets/incoming/example.mp4 \
   --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
@@ -74,13 +76,14 @@ Explicitly excluded:
 
 ## Install
 
-Create and activate a local virtualenv first, then install the package in editable mode:
+Create and activate a local virtualenv first, then upgrade packaging tools and install the package in editable mode:
 
 ```bash
 cd /home/myclaw/.openclaw/workspace/src/thermal-data-engine
 python3 -m venv .venv
 source .venv/bin/activate
-python3 -m pip install -e .[dev]
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -e .[dev]
 ```
 
 After that, the CLI should resolve in the active shell:
@@ -94,7 +97,7 @@ thermal-data-engine --help
 Parquet bundle output requires a backend such as `pyarrow`. Install it in the same environment when you want real bundle writing:
 
 ```bash
-python3 -m pip install -e .[dev,parquet]
+python -m pip install -e .[dev,parquet]
 ```
 
 The pipeline raises an explicit error if no parquet backend is available.
@@ -125,6 +128,7 @@ In a separate shell:
 cd /home/myclaw/.openclaw/workspace/src/vision_api
 python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
