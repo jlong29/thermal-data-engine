@@ -16,6 +16,7 @@
 
 ### Goal
 - Deliver a runnable initial repo scaffold with config-driven offline ingestion, `vision_api` job submission + artifact consumption, simple tracking and clip selection, bundle writing, local upload abstraction, inspection tools, and focused tests/docs.
+- Extend verification beyond plumbing success by demonstrating that the pipeline can produce at least some raw detections on a known-positive sample (`datasets/incoming/CorpusChristi_PM398_05Feb_11_20am.mp4`), even before selection policy quality is tuned.
 
 ### Success criteria
 - [x] Repo has its own initialized structure, repo-specific `AGENTS.md`, packaging metadata, config files, and task scratch files.
@@ -23,7 +24,8 @@
 - [x] Saved bundles follow the Phase 1 contract and include manifest + parquet artifacts.
 - [x] Inspection utilities can summarize recent clips, ambiguous clips, detector behavior, model version, and edge status from local artifacts.
 - [x] Focused tests cover schemas/serialization, tracking or summarization logic, selection policy, and bundle validity.
-- [x] Basic run documentation exists and the implementation passes meaningful local verification. Unit validation passed locally, and an end-to-end `process-file` run completed successfully against local `vision_api`.
+- [x] Basic run documentation exists and the implementation passes meaningful local verification. Unit validation passed locally, an end-to-end `process-file` run completed successfully against local `vision_api`, and positive-detection verification was demonstrated on a known-busy sample.
+- [x] The pipeline produces at least some raw detections on `datasets/incoming/CorpusChristi_PM398_05Feb_11_20am.mp4`, or a concrete integration/runtime issue is identified and traced back through prior successful `vision_api` task history.
 
 ### Relevant files (why)
 - `Design_draft.md` — repo mission, scope boundaries, file layout, required outputs, and verification expectations.
@@ -58,6 +60,12 @@
   - Result: completed end to end with run artifacts under `outputs/thermal_data_engine/runs/clip-8aa62360d128-20260414T214812Z/`
   - Selection result: `selected=false`, `selection_reason=no_detections`
   - Runtime lesson: safer NX defaults matter; preview rendering was disabled and `max_frames` reduced to `600` for bring-up.
+- Positive-detection verification: `PYTHONPATH=src python3 -m thermal_data_engine.cli process-file --source ~/.openclaw/workspace/datasets/incoming/CorpusChristi_PM398_05Feb_11_20am.mp4 --edge-config configs/edge/corpus_verification.yaml --output-root ~/.openclaw/workspace/outputs/thermal_data_engine --vision-api-url http://127.0.0.1:8000` ✅
+  - Result: completed end to end with run artifacts under `outputs/thermal_data_engine/runs/clip-4c2b3b029292-20260415T005348Z/`
+  - `vision_api` detection result: `frames_with_target_detections=102`, `total_target_detections=102` over a 5-second bounded window starting at `210.0s`
+  - Thermal pipeline result: `selected=true`, `selection_reason=edge_activity`, `track_count=18`, `detection_count=247`
+  - Root cause of the earlier empty run: this source reports `1000 fps`, so the safer bring-up default `max_frames: 600` only covered the first `0.6s` of the clip.
+  - Useful verification artifact: `configs/edge/corpus_verification.yaml` captures the known-good bounded request shape for this sample.
 
 ### Risks / gotchas
 - `vision_api` may not be running locally during validation, so the client and tests need graceful error handling and seams for fakes.

@@ -1,13 +1,14 @@
 # .agent/MEMORY.md (scratch)
 
 **Task:** initial-edge-pipeline  
-**Last updated:** 2026-04-14 20:02 EDT
+**Last updated:** 2026-04-14 20:31 EDT
 
 ## Goal / status
 - Discovery complete enough to bootstrap Phase 1 implementation.
 - Repo bootstrap and initial implementation are now in place.
 - End-to-end processing now works against local `vision_api`.
 - Non-selected runs are now inspectable through repo-local inspection helpers and CLI output, which closes the biggest observability gap from the `no_detections` bring-up run.
+- Positive-detection verification is now demonstrated on the Corpus Christi sample using a bounded later window.
 
 ## Repro commands
 - `git init && git checkout -b feature/initial-edge-pipeline`
@@ -29,17 +30,19 @@
 - The outer workspace git still exists, but sibling repos under `src/` are independently versioned.
 - `rg` is unavailable on this host, so bounded discovery currently relies on `find`, `grep`, `sed`, and selective file reads.
 - Initial NX bring-up should avoid preview rendering. The earlier default `dataset_package_plus_preview_video` hit a DeepStream/NVVIC memory allocation failure; switching to `dataset_package` with a smaller `max_frames` allowed end-to-end completion.
+- `CorpusChristi_PM398_05Feb_11_20am.mp4` reports `1000 fps`, so bounded verification windows must be chosen carefully. With that metadata, `max_frames: 600` only covers `0.6s`, which explained the first empty run.
 
 ## Verification run
 - Command(s): discovery reads, repo inspection, `git init`, branch creation, `python3 -m compileall src`, `python3 -m pytest tests`, `python3 -m pip install --user pyarrow`, `PYTHONPATH=src python3 -m thermal_data_engine.cli inspect edge-status --root ~/.openclaw/workspace/outputs/thermal_data_engine`, `PYTHONPATH=src python3 -m thermal_data_engine.cli process-file --source ~/.openclaw/workspace/datasets/incoming/example.mp4 --output-root ~/.openclaw/workspace/outputs/thermal_data_engine --vision-api-url http://127.0.0.1:8000`.
 - Outcome(s): compileall passed, pytest passed, pyarrow installed, CLI smoke test passed, full end-to-end run passed. The successful run produced `runs/clip-8aa62360d128-20260414T214812Z/` and ended with `selected=false` / `selection_reason=no_detections`.
 
 ## Latest increment
-- Surfaced bundle clip-write provenance in stable local artifacts: `edge.bundle.write_bundle()` now records `extra.clip_artifact.write_mode` plus the bundle source path in `clip_manifest.json`, and returns the mode to the caller.
-- Extended `edge.pipeline` run summaries with a `bundle` section so selected runs explicitly report whether a bundle was written and whether `clip.mp4` came from segment extraction or source-copy fallback.
-- Added `agent_tools.inspect.clip_artifact_summary()` and a matching `inspect clip-artifacts` CLI subcommand so operators can quickly see how bundles were produced without opening videos by hand.
-- Updated focused tests for bundle metadata and inspect output, and refreshed README examples/docs for the new inspect surface.
+- Added `agent_tools.inspect.upload_summary()` and wired it into `inspect edge-status`, so the edge status view now rolls up recent upload outcomes instead of forcing operators to inspect only the latest run.
+- Extended `tests/test_inspect.py` to cover the new upload rollup and refreshed the README run-record docs to mention the new inspect behavior.
 - Validation: `python3 -m compileall src` and `python3 -m pytest tests` both passed after the change (10 passed). Pytest still emits the existing pyarrow/pandas integration warning, but tests remain green.
+- Committed the increment as `5794f2d` (`Add upload summary to edge status inspect`).
+- Added `configs/edge/corpus_verification.yaml` and used it to run the pipeline against `CorpusChristi_PM398_05Feb_11_20am.mp4` with `start_time_sec: 210.0` and `max_frames: 5000`, based on sampled-frame inspection and prior `vision_api` task-history clues.
+- Verification result: `vision_api` emitted `102` person detections across `102` frames in a 5-second bounded window; the thermal pipeline retained the result as bundle `clip-4c2b3b029292` with `track_count=18`, `detection_count=247`, and `selection_reason=edge_activity`.
 
 ## Next steps
 - Consider a lower-memory or alternate profile fallback for especially constrained NX conditions, without breaking the stable `vision_api` contract.
