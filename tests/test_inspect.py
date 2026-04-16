@@ -219,3 +219,24 @@ def test_validate_ultralytics_package_reports_missing_labels_and_bad_coords(tmp_
     assert any("coordinate outside [0, 1]" in error for error in result["errors"])
     assert any("missing label for image" in error for error in result["errors"])
     assert any("manifest.json missing" in warning for warning in result["warnings"])
+
+
+
+def test_validate_ultralytics_package_accepts_mapping_style_names(tmp_path):
+    dataset_root = tmp_path / "dataset"
+    (dataset_root / "images").mkdir(parents=True, exist_ok=True)
+    (dataset_root / "labels").mkdir(parents=True, exist_ok=True)
+    (dataset_root / "splits").mkdir(parents=True, exist_ok=True)
+    (dataset_root / "images" / "frame-001.jpg").write_bytes(b"jpg")
+    (dataset_root / "labels" / "frame-001.txt").write_text("0 0.5 0.5 0.25 0.25\n")
+    (dataset_root / "splits" / "train.txt").write_text("images/frame-001.jpg\n")
+    (dataset_root / "splits" / "val.txt").write_text("images/frame-001.jpg\n")
+    (dataset_root / "dataset.yaml").write_text(
+        "path: .\ntrain: splits/train.txt\nval: splits/val.txt\nnames:\n  0: person\n"
+    )
+
+    result = validate_ultralytics_package(str(dataset_root))
+
+    assert result["ok"] is True
+    assert result["dataset_fields"]["names"] == "0: person"
+    assert result["errors"] == []

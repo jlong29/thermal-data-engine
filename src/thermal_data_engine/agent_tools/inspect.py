@@ -126,16 +126,40 @@ def _resolve_dataset_entry(dataset_root: Path, dataset_path: Path, value: str) -
 
 def _parse_dataset_yaml(dataset_path: Path) -> Dict[str, str]:
     values = {}
+    active_parent_key = None
+    nested_values = []
+
     for raw_line in dataset_path.read_text().splitlines():
-        line = raw_line.split("#", 1)[0].strip()
-        if not line or ":" not in line:
+        line_without_comment = raw_line.split("#", 1)[0].rstrip()
+        if not line_without_comment.strip():
+            continue
+
+        indent = len(line_without_comment) - len(line_without_comment.lstrip())
+        line = line_without_comment.strip()
+
+        if indent > 0 and active_parent_key == "names":
+            nested_values.append(line)
+            continue
+
+        if active_parent_key == "names" and nested_values:
+            values[active_parent_key] = "; ".join(nested_values)
+            nested_values = []
+        active_parent_key = None
+
+        if ":" not in line:
             continue
         key, value = line.split(":", 1)
         key = key.strip()
         value = value.strip()
         if value.startswith(("'", '"')) and value.endswith(("'", '"')) and len(value) >= 2:
             value = value[1:-1]
+        if value == "":
+            active_parent_key = key
         values[key] = value
+
+    if active_parent_key == "names" and nested_values:
+        values[active_parent_key] = "; ".join(nested_values)
+
     return values
 
 

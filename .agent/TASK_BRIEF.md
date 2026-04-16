@@ -29,7 +29,7 @@
 - [x] Structure/invariants validation is recorded as complete for the current slice: package install works on-device, CLI help surfaces are correct, default and low-memory smoke tests reach local `vision_api`, and run records / inspect outputs are coherent.
 - [x] The repo brief states explicitly that preview artifacts are optional and that missing preview output is not a correctness failure when preview was not requested.
 - [x] A durable repo doc captures the Ultralytics boundary and the staged migration rationale. (`docs/BOUNDARY_AND_ULTRALYTICS_NOTES.md`)
-- [ ] Artifact correctness is resolved for at least one retained bundle, including sane clip timing/media metadata and consistency between `clip.mp4`, parquet artifacts, and `clip_manifest.json`, or the issue is converted into a concrete follow-up/handoff with clear evidence.
+- [x] Artifact correctness is resolved for at least one retained bundle, including sane clip timing/media metadata and consistency between `clip.mp4`, parquet artifacts, and `clip_manifest.json`, or the issue is converted into a concrete follow-up/handoff with clear evidence.
 - [x] The thermal repo has a concrete Ultralytics-compatibility checklist or validation helper for the training-facing package boundary, ready for tomorrow's hotter-machine smoke test. (`inspect ultralytics-package`, `docs/ULTRALYTICS_PACKAGE_CHECKLIST.md`)
 - [x] The next thermal-owned packaging slice is concrete on disk, either as validated implementation scaffolding or as a precise handoff contract and file plan that can be executed without re-deciding the boundary. (`docs/ULTRALYTICS_PACKAGE_CHECKLIST.md`)
 
@@ -55,10 +55,10 @@
 
 ### Overnight plan
 1) Keep the completed structure/invariants evidence intact. (done)
-2) Diagnose the retained-bundle clip timing issue precisely, including whether absolute source timestamps are being passed to ffmpeg when runtime-relative timestamps are needed. (implemented, awaiting one regenerated retained-bundle confirmation)
+2) Diagnose the retained-bundle clip timing issue precisely, including whether absolute source timestamps are being passed to ffmpeg when runtime-relative timestamps are needed. (done, regenerated retained bundle confirmed sane)
 3) Add or refine durable notes/checks for the Ultralytics-compatible training-facing package boundary, using the current `vision_api` package as the compatibility reference rather than the final architecture. (done)
 4) Prepare the next thermal-owned packaging slice so work can start or continue without boundary ambiguity, but do not rip packaging out of `vision_api` in one jump. (done)
-5) Defer the real Ultralytics load/train smoke test until the hotter machine is ready tomorrow, but leave the package contract and checklist ready for it. (ready)
+5) Defer the real Ultralytics load/train smoke test until the hotter machine is ready tomorrow, but leave the package contract and checklist ready for it. (ready, structural validator confirmed against a real reference dataset package)
 
 ### Verification
 - Fast: `python3 -m compileall src`
@@ -72,6 +72,7 @@
 - Artifact layer:
   - `ffprobe <bundle>/clip.mp4`
   - inspect one selected bundle's manifest and parquet outputs
+  - confirmed on `outputs/thermal_data_engine/bundles/clip-4c2b3b029292`: `clip.mp4` duration `4.997s` vs manifest window `0.0 -> 4.995`, `detections.parquet` rows `29`, `tracks.parquet` rows `4`, `extra.clip_artifact.timestamp_mode=runtime_relative_timestamps`
 - Packaging readiness layer:
   - `python3 -m thermal_data_engine.cli inspect ultralytics-package --path <dataset_root>`
 - Tomorrow's hotter-machine validation target:
@@ -86,9 +87,10 @@
 - When `clip.mp4` is cut from `vision_api`'s already-bounded `runtime_input_path`, manifest timestamps are still absolute source timestamps. Bundle extraction must convert them back to runtime-relative offsets before calling ffmpeg.
 - The current `vision_api` dataset package is the reference for Ultralytics compatibility today, but it should be treated as a compatibility reference, not necessarily the final ownership boundary.
 - The new `inspect ultralytics-package` helper is intentionally structural, not a substitute for a real Ultralytics import/train smoke test on the hotter machine.
+- Real reference dataset packages may express `dataset.yaml` class names as an indented mapping (`names:\n  0: person`), so the structural validator must accept both list-style and mapping-style Ultralytics name declarations.
 
 ### Decision rule for completion
-- Treat this repo slice as complete only when the artifact-correctness layer is either resolved on at least one retained bundle or converted into a concrete follow-up/handoff, and the thermal-owned packaging direction is concrete enough that tomorrow's Ultralytics smoke test has a clear target package contract.
+- This repo slice is complete when the artifact-correctness layer is resolved on at least one retained bundle or converted into a concrete follow-up/handoff, and the thermal-owned packaging direction is concrete enough that tomorrow's Ultralytics smoke test has a clear target package contract. Current state: complete for this slice, pending tomorrow's hotter-machine Ultralytics load/train smoke test outside this repo-local brief.
 
 ### Deferred work note
 - Do not turn this task into model/backend redesign or cross-repo detector tuning unless artifact validation proves the issue cannot be handled from the thermal-data-engine side.
