@@ -9,6 +9,7 @@ from thermal_data_engine.agent_tools.inspect import (
     recent_clips,
     recent_runs,
     upload_summary,
+    validate_ultralytics_package,
 )
 
 
@@ -170,3 +171,51 @@ def test_recent_runs_falls_back_to_run_id_timestamp_suffix(tmp_path):
     assert [item["clip_id"] for item in runs] == ["clip-a", "clip-z"]
     assert status["latest_run"]["clip_id"] == "clip-a"
     assert status["latest_run"]["selected"] is True
+
+
+
+def test_validate_ultralytics_package_reports_ready_dataset(tmp_path):
+    dataset_root = tmp_path / "dataset"
+    (dataset_root / "images").mkdir(parents=True, exist_ok=True)
+    (dataset_root / "labels").mkdir(parents=True, exist_ok=True)
+    (dataset_root / "splits").mkdir(parents=True, exist_ok=True)
+    (dataset_root / "images" / "frame-001.jpg").write_bytes(b"jpg")
+    (dataset_root / "labels" / "frame-001.txt").write_text("0 0.5 0.5 0.25 0.25\n")
+    (dataset_root / "splits" / "train.txt").write_text("images/frame-001.jpg\n")
+    (dataset_root / "splits" / "val.txt").write_text("images/frame-001.jpg\n")
+    (dataset_root / "dataset.yaml").write_text(
+        "path: .\ntrain: splits/train.txt\nval: splits/val.txt\nnames: ['person']\n"
+    )
+    (dataset_root / "manifest.json").write_text("{}")
+
+    result = validate_ultralytics_package(str(dataset_root))
+
+    assert result["ok"] is True
+    assert result["split_counts"] == {"train": 1, "val": 1}
+    assert result["image_count"] == 2
+    assert result["label_count"] == 2
+    assert result["object_count"] == 2
+    assert result["errors"] == []
+
+
+
+def test_validate_ultralytics_package_reports_missing_labels_and_bad_coords(tmp_path):
+    dataset_root = tmp_path / "dataset"
+    (dataset_root / "images").mkdir(parents=True, exist_ok=True)
+    (dataset_root / "labels").mkdir(parents=True, exist_ok=True)
+    (dataset_root / "splits").mkdir(parents=True, exist_ok=True)
+    (dataset_root / "images" / "frame-001.jpg").write_bytes(b"jpg")
+    (dataset_root / "images" / "frame-002.jpg").write_bytes(b"jpg")
+    (dataset_root / "labels" / "frame-001.txt").write_text("0 1.5 0.5 0.25 0.25\n")
+    (dataset_root / "splits" / "train.txt").write_text("images/frame-001.jpg\nimages/frame-002.jpg\n")
+    (dataset_root / "splits" / "val.txt").write_text("images/frame-001.jpg\n")
+    (dataset_root / "dataset.yaml").write_text(
+        "path: .\ntrain: splits/train.txt\nval: splits/val.txt\nnames: ['person']\n"
+    )
+
+    result = validate_ultralytics_package(str(dataset_root))
+
+    assert result["ok"] is False
+    assert any("coordinate outside [0, 1]" in error for error in result["errors"])
+    assert any("missing label for image" in error for error in result["errors"])
+    assert any("manifest.json missing" in warning for warning in result["warnings"])

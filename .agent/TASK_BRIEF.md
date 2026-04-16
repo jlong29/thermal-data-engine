@@ -30,8 +30,8 @@
 - [x] The repo brief states explicitly that preview artifacts are optional and that missing preview output is not a correctness failure when preview was not requested.
 - [x] A durable repo doc captures the Ultralytics boundary and the staged migration rationale. (`docs/BOUNDARY_AND_ULTRALYTICS_NOTES.md`)
 - [ ] Artifact correctness is resolved for at least one retained bundle, including sane clip timing/media metadata and consistency between `clip.mp4`, parquet artifacts, and `clip_manifest.json`, or the issue is converted into a concrete follow-up/handoff with clear evidence.
-- [ ] The thermal repo has a concrete Ultralytics-compatibility checklist or validation helper for the training-facing package boundary, ready for tomorrow's hotter-machine smoke test.
-- [ ] The next thermal-owned packaging slice is concrete on disk, either as validated implementation scaffolding or as a precise handoff contract and file plan that can be executed without re-deciding the boundary.
+- [x] The thermal repo has a concrete Ultralytics-compatibility checklist or validation helper for the training-facing package boundary, ready for tomorrow's hotter-machine smoke test. (`inspect ultralytics-package`, `docs/ULTRALYTICS_PACKAGE_CHECKLIST.md`)
+- [x] The next thermal-owned packaging slice is concrete on disk, either as validated implementation scaffolding or as a precise handoff contract and file plan that can be executed without re-deciding the boundary. (`docs/ULTRALYTICS_PACKAGE_CHECKLIST.md`)
 
 ### Relevant files (why)
 - `configs/edge/default.yaml` — current conservative baseline
@@ -55,10 +55,10 @@
 
 ### Overnight plan
 1) Keep the completed structure/invariants evidence intact. (done)
-2) Diagnose the retained-bundle clip timing issue precisely, including whether absolute source timestamps are being passed to ffmpeg when runtime-relative timestamps are needed. (active)
-3) Add or refine durable notes/checks for the Ultralytics-compatible training-facing package boundary, using the current `vision_api` package as the compatibility reference rather than the final architecture. (active)
-4) Prepare the next thermal-owned packaging slice so work can start or continue without boundary ambiguity, but do not rip packaging out of `vision_api` in one jump. (next)
-5) Defer the real Ultralytics load/train smoke test until the hotter machine is ready tomorrow, but leave the package contract and checklist ready for it. (planned)
+2) Diagnose the retained-bundle clip timing issue precisely, including whether absolute source timestamps are being passed to ffmpeg when runtime-relative timestamps are needed. (implemented, awaiting one regenerated retained-bundle confirmation)
+3) Add or refine durable notes/checks for the Ultralytics-compatible training-facing package boundary, using the current `vision_api` package as the compatibility reference rather than the final architecture. (done)
+4) Prepare the next thermal-owned packaging slice so work can start or continue without boundary ambiguity, but do not rip packaging out of `vision_api` in one jump. (done)
+5) Defer the real Ultralytics load/train smoke test until the hotter machine is ready tomorrow, but leave the package contract and checklist ready for it. (ready)
 
 ### Verification
 - Fast: `python3 -m compileall src`
@@ -72,6 +72,8 @@
 - Artifact layer:
   - `ffprobe <bundle>/clip.mp4`
   - inspect one selected bundle's manifest and parquet outputs
+- Packaging readiness layer:
+  - `python3 -m thermal_data_engine.cli inspect ultralytics-package --path <dataset_root>`
 - Tomorrow's hotter-machine validation target:
   - a real Ultralytics dataset load/train smoke test against the training-facing package boundary
 
@@ -83,6 +85,7 @@
 - A retained bundle can be structurally present while still having suspicious media timing metadata, so inspect results must not be over-read.
 - When `clip.mp4` is cut from `vision_api`'s already-bounded `runtime_input_path`, manifest timestamps are still absolute source timestamps. Bundle extraction must convert them back to runtime-relative offsets before calling ffmpeg.
 - The current `vision_api` dataset package is the reference for Ultralytics compatibility today, but it should be treated as a compatibility reference, not necessarily the final ownership boundary.
+- The new `inspect ultralytics-package` helper is intentionally structural, not a substitute for a real Ultralytics import/train smoke test on the hotter machine.
 
 ### Decision rule for completion
 - Treat this repo slice as complete only when the artifact-correctness layer is either resolved on at least one retained bundle or converted into a concrete follow-up/handoff, and the thermal-owned packaging direction is concrete enough that tomorrow's Ultralytics smoke test has a clear target package contract.

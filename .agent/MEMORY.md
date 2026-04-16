@@ -40,5 +40,10 @@
 - Fix: `src/thermal_data_engine/edge/bundle.py` now converts manifest timestamps to runtime-relative offsets when the source clip is the `vision_api` bounded input, and records the resolved clip window in `clip_artifact` metadata.
 - Validation: `python3 -m compileall src`; `python3 -m pytest tests/test_bundle.py tests/test_smoke.py tests/test_config.py` (`11 passed`).
 
+## Verification run
+- Command(s): `python3 -m compileall src`; `python3 -m pytest tests/test_inspect.py tests/test_bundle.py tests/test_smoke.py tests/test_config.py`
+- Outcome(s): compileall passed, targeted pytest passed (`16 passed`). Added `inspect ultralytics-package` as a lightweight readiness validator for the current Ultralytics-style dataset contract and wrote `docs/ULTRALYTICS_PACKAGE_CHECKLIST.md` as the staged thermal-owned package/file-plan handoff for tomorrow's hotter-machine smoke test.
+
 ## Next steps
 - Re-run one retained-bundle path against local `vision_api` and confirm the regenerated `clip.mp4` duration now matches the manifest window closely enough to mark artifact correctness complete.
+- Run `python3 -m thermal_data_engine.cli inspect ultralytics-package --path <dataset_root>` against a real dataset package to capture bounded readiness evidence before the hotter-machine Ultralytics load/train smoke test.

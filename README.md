@@ -185,6 +185,7 @@ python3 -m thermal_data_engine.cli inspect detector --root ~/.openclaw/workspace
 python3 -m thermal_data_engine.cli inspect clip-artifacts --root ~/.openclaw/workspace/outputs/thermal_data_engine
 python3 -m thermal_data_engine.cli inspect edge-status --root ~/.openclaw/workspace/outputs/thermal_data_engine
 python3 -m thermal_data_engine.cli inspect runs --root ~/.openclaw/workspace/outputs/thermal_data_engine
+python3 -m thermal_data_engine.cli inspect ultralytics-package --path ~/.openclaw/workspace/outputs/inference_jobs/<job_id>/dataset
 ```
 
 ## Output layout
@@ -210,6 +211,8 @@ Saved clip bundles:
 When a run has a bounded `start_ts` and `end_ts`, bundle writing now tries to cut `clip.mp4` down to that observed time window with `ffmpeg`. If segment extraction is unavailable or fails, it falls back to copying the runtime input so the stable bundle contract still holds.
 
 Bundle manifests now record `extra.clip_artifact.write_mode`, and `inspect clip-artifacts` summarizes how often bundles were written by segment extraction versus source-copy fallback.
+
+For the staged thermal-owned packaging migration, `inspect ultralytics-package` validates the current training-facing package contract against the existing Ultralytics-style dataset layout. It checks for the expected `images/`, `labels/`, `splits/train.txt`, `splits/val.txt`, `dataset.yaml`, per-image label files, and normalized YOLO label rows so tomorrow's hotter-machine load/train smoke test has a concrete readiness check.
 
 Optional local upload copies:
 
