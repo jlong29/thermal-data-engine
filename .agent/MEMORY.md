@@ -1,11 +1,12 @@
 # .agent/MEMORY.md (scratch)
 
 **Task:** low-memory-edge-profile  
-**Last updated:** 2026-04-14 22:07 EDT
+**Last updated:** 2026-04-15 22:10 EDT
 
 ## Goal / status
 - Smoke-test milestone completed and validated.
 - Low-memory Xavier NX fallback profile is now implemented, documented, and covered by targeted config/smoke tests.
+- Artifact-correctness follow-up is active. The first suspicious retained bundle was traced to a repo-local clip extraction bug, not yet to a `vision_api` boundary issue.
 
 ## Repro commands
 - `python3 -m compileall src`
@@ -27,10 +28,17 @@
 ## Gotchas discovered (promote at closeout)
 - If a repo-local brief is left fully checked off after a milestone, the isolated progress runner will correctly stop. The next concrete repo-local task has to be written down explicitly to keep overnight progress honest.
 - The smoke-test path is now real, so future edge bring-up refinements should prefer validating through it before inventing more ad hoc one-off commands.
+- A selected bundle can still have a bogus `clip.mp4` even when manifest/parquet structure looks coherent, because bundle extraction was using absolute source timestamps against `vision_api`'s already-bounded `runtime_input_path`.
 
 ## Verification run
 - Command(s): `python3 -m compileall src`; `python3 -m pytest tests/test_config.py tests/test_smoke.py`
 - Outcome(s): compileall passed, and targeted pytest passed (`6 passed`). Coverage now confirms `configs/edge/low_memory.yaml` stays bounded (`dataset_package`, preview off, `max_frames: null`, `max_duration_sec: 3.0`, `frame_stride: 10`) and that `smoke-test --use-edge-window` preserves the selected edge profile window instead of overriding it.
 
+## Verification run
+- Artifact check: inspected `~/.openclaw/workspace/outputs/thermal_data_engine/bundles/clip-4c2b3b029292/clip_manifest.json`, `ffprobe` on its `clip.mp4`, and parquet row counts.
+- Observed: manifest/parquet counts were coherent (`detection_count=247`, `track_count=18`), but `clip.mp4` was only `0.077s` with `77` frames at `1000/1` fps because bundle extraction sought to `210s` inside a 5-second bounded runtime clip.
+- Fix: `src/thermal_data_engine/edge/bundle.py` now converts manifest timestamps to runtime-relative offsets when the source clip is the `vision_api` bounded input, and records the resolved clip window in `clip_artifact` metadata.
+- Validation: `python3 -m compileall src`; `python3 -m pytest tests/test_bundle.py tests/test_smoke.py tests/test_config.py` (`11 passed`).
+
 ## Next steps
-- If the user wants more confidence on real hardware, run a live NX smoke test with `configs/edge/low_memory.yaml` against the local `vision_api` service and capture the resulting run record.
+- Re-run one retained-bundle path against local `vision_api` and confirm the regenerated `clip.mp4` duration now matches the manifest window closely enough to mark artifact correctness complete.

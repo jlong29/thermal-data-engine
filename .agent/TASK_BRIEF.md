@@ -47,9 +47,9 @@
 
 ### Refined plan
 1) Keep the new lower-memory profile and human-runnable Quick start as the validated operator entry path. (completed)
-2) Finish the current structure/invariants validation pass using the on-device user walkthrough. (active)
-3) Use at least one retained bundle to test artifact correctness separately, starting with the suspicious clip-timing case already observed in a selected bundle. (next)
-4) Escalate to a cross-repo handoff only if the artifact issue traces back to `vision_api` runtime metadata or clipping behavior rather than local bundle writing.
+2) Keep the structure/invariants validation pass recorded as complete, without overclaiming artifact correctness. (completed)
+3) Validate at least one retained bundle for artifact correctness, starting with the suspicious clip-timing case already observed in a selected bundle. (active)
+4) Escalate to a cross-repo handoff only if the remaining artifact issue traces back to `vision_api` runtime metadata or clipping behavior rather than local bundle writing. (next)
 
 ### Verification
 - Fast: `python3 -m compileall src`
@@ -70,6 +70,7 @@
 - Smoke-test defaults intentionally provide their own bounded window unless `--use-edge-window` is passed, so operators must opt in when they specifically want to validate a named profile's own runtime window.
 - Older Xavier-side virtualenvs may start with packaging tools too old for `pyproject.toml` editable installs; upgrade `pip`, `setuptools`, and `wheel` first.
 - A retained bundle can be structurally present while still having suspicious media timing metadata, so inspect results must not be over-read.
+- When `clip.mp4` is cut from `vision_api`'s already-bounded `runtime_input_path`, manifest timestamps are still absolute source timestamps. Bundle extraction must convert them back to runtime-relative offsets before calling ffmpeg.
 
 ### Decision rule for completion
 - Treat the current repo slice as complete only when the structure/invariants layer is validated and the artifact-correctness layer is either validated on at least one retained bundle or converted into a concrete follow-up/handoff with clear acceptance language.

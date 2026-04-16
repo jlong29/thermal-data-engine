@@ -143,3 +143,38 @@ def test_write_bundle_falls_back_to_copy_when_segment_extraction_fails(
     assert result["clip_write_mode"] == "source_copy"
     assert sample_manifest.extra["clip_artifact"]["write_mode"] == "source_copy"
     assert (tmp_path / "bundle" / "clip.mp4").read_bytes() == b"copied"
+
+
+def test_write_bundle_uses_runtime_relative_timestamps_for_bounded_input(
+    tmp_path, monkeypatch, sample_manifest, sample_detections, sample_tracks
+):
+    source_clip = tmp_path / "bounded_input.mp4"
+    source_clip.write_bytes(b"fake-mp4")
+    sample_manifest.start_ts = "210.0"
+    sample_manifest.end_ts = "214.995"
+    sample_manifest.extra["vision_job_manifest"] = {
+        "runtime_input_path": str(source_clip),
+        "start_time_sec": 210.0,
+    }
+
+    captured = {}
+
+    def fake_extract(source_path, destination_path, start_ts, end_ts):
+        captured["source_path"] = source_path
+        captured["destination_path"] = destination_path
+        captured["start_ts"] = start_ts
+        captured["end_ts"] = end_ts
+        Path(destination_path).write_bytes(b"segment")
+        return True
+
+    monkeypatch.setattr(bundle_module, "extract_clip_segment", fake_extract)
+
+    result = bundle_module.write_bundle(tmp_path / "bundle", source_clip, sample_manifest, sample_detections, sample_tracks)
+
+    assert result["clip_write_mode"] == "segment_extract"
+    assert captured["source_path"] == source_clip
+    assert captured["destination_path"] == tmp_path / "bundle" / "clip.mp4"
+    assert captured["start_ts"] == "0"
+    assert captured["end_ts"] == "4.995"
+    assert sample_manifest.extra["clip_artifact"]["timestamp_mode"] == "runtime_relative_timestamps"
+    assert sample_manifest.extra["clip_artifact"]["clip_start_ts"] == "0"
