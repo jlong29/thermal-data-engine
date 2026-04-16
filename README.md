@@ -153,6 +153,18 @@ python3 -m thermal_data_engine.cli process-file \
   --vision-api-url http://127.0.0.1:8000
 ```
 
+Process a whole folder of videos and assemble one training-facing Ultralytics package:
+
+```bash
+python3 -m thermal_data_engine.cli process-directory \
+  --source-dir ~/.openclaw/workspace/datasets/incoming \
+  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
+  --vision-api-url http://127.0.0.1:8000 \
+  --package-name incoming-sample
+```
+
+That command runs the normal per-file pipeline for each supported video in the folder, then combines the emitted per-job dataset packages into one handoff-ready package under `ultralytics_packages/<package_name>/`.
+
 Run a fast bounded smoke test:
 
 ```bash
@@ -211,6 +223,21 @@ Saved clip bundles:
 When a run has a bounded `start_ts` and `end_ts`, bundle writing now tries to cut `clip.mp4` down to that observed time window with `ffmpeg`. If segment extraction is unavailable or fails, it falls back to copying the runtime input so the stable bundle contract still holds.
 
 Bundle manifests now record `extra.clip_artifact.write_mode`, and `inspect clip-artifacts` summarizes how often bundles were written by segment extraction versus source-copy fallback.
+
+Combined training-facing packages:
+
+```text
+<output_root>/ultralytics_packages/<package_id>/
+├─ dataset.yaml
+├─ images/
+├─ labels/
+├─ splits/
+│  ├─ train.txt
+│  └─ val.txt
+└─ manifest.json
+```
+
+`manifest.json` records which source files and `vision_api` jobs contributed each packaged frame so the desktop fine-tuning machine gets one inspectable handoff root instead of a pile of per-job datasets.
 
 For the staged thermal-owned packaging migration, `inspect ultralytics-package` validates the current training-facing package contract against the existing Ultralytics-style dataset layout. It checks for the expected `images/`, `labels/`, `splits/train.txt`, `splits/val.txt`, `dataset.yaml`, per-image label files, and normalized YOLO label rows so tomorrow's hotter-machine load/train smoke test has a concrete readiness check.
 

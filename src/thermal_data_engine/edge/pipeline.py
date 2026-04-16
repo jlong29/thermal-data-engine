@@ -1,4 +1,5 @@
 import hashlib
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -12,6 +13,9 @@ from thermal_data_engine.edge.summarizer import summarize_tracks
 from thermal_data_engine.edge.tracking import assign_track_ids
 from thermal_data_engine.edge.upload import upload_bundle
 from thermal_data_engine.vision_api.client import VisionApiClient
+
+
+_VIDEO_SUFFIXES = (".mp4", ".mov", ".m4v", ".avi", ".mkv")
 
 
 def _clip_id_for_source(source_path: Path) -> str:
@@ -101,6 +105,174 @@ def _resolve_frame_window(frame_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "start_ts": None if first_row.get("source_timestamp_sec") is None else str(first_row.get("source_timestamp_sec")),
         "end_ts": None if last_row.get("source_timestamp_sec") is None else str(last_row.get("source_timestamp_sec")),
     }
+
+
+def _write_dataset_yaml(dataset_root: Path, class_name: str) -> None:
+    yaml_text = "path: .\ntrain: splits/train.txt\nval: splits/val.txt\nnames:\n  0: {}\n".format(class_name)
+    (dataset_root / "dataset.yaml").write_text(yaml_text)
+
+
+def _list_video_sources(source_dir: Path) -> List[Path]:
+    if not source_dir.exists() or not source_dir.is_dir():
+        raise NotADirectoryError("SOURCE_DIR_NOT_FOUND: {}".format(str(source_dir)))
+    sources = [
+        path
+        for path in sorted(source_dir.iterdir())
+        if path.is_file() and path.suffix.lower() in _VIDEO_SUFFIXES
+    ]
+    if not sources:
+        raise FileNotFoundError("NO_VIDEO_SOURCES_FOUND: {}".format(str(source_dir)))
+    return sources
+
+
+def _split_entries(dataset_root: Path, split_name: str) -> List[str]:
+    split_path = dataset_root / "splits" / "{}.txt".format(split_name)
+    if not split_path.exists():
+        raise FileNotFoundError("DATASET_SPLIT_MISSING: {}".format(str(split_path)))
+    return [line.strip() for line in split_path.read_text().splitlines() if line.strip()]
+
+
+def _label_path_for_image(dataset_root: Path, image_rel_path: str) -> Path:
+    image_rel = Path(image_rel_path)
+    if image_rel.parts and image_rel.parts[0] == "images":
+        image_rel = Path(*image_rel.parts[1:])
+    return dataset_root / "labels" / image_rel.with_suffix(".txt")
+
+
+def _copy_split_entry(dataset_root: Path, image_rel_path: str, destination_root: Path, file_prefix: str) -> str:
+    source_image_path = dataset_root / image_rel_path
+    if not source_image_path.exists():
+        raise FileNotFoundError("DATASET_IMAGE_MISSING: {}".format(str(source_image_path)))
+
+    source_label_path = _label_path_for_image(dataset_root, image_rel_path)
+    if not source_label_path.exists():
+        raise FileNotFoundError("DATASET_LABEL_MISSING: {}".format(str(source_label_path)))
+
+    destination_name = "{}__{}".format(file_prefix, source_image_path.name)
+    destination_image_rel = Path("images") / destination_name
+    destination_label_rel = Path("labels") / Path(destination_name).with_suffix(".txt")
+    destination_image_path = destination_root / destination_image_rel
+    destination_label_path = destination_root / destination_label_rel
+
+    if destination_image_path.exists() or destination_label_path.exists():
+        raise RuntimeError("DATASET_ENTRY_COLLISION: {}".format(destination_name))
+
+    destination_image_path.parent.mkdir(parents=True, exist_ok=True)
+    destination_label_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_image_path, destination_image_path)
+    shutil.copy2(source_label_path, destination_label_path)
+    return str(destination_image_rel).replace("\\", "/")
+
+
+def _package_id_for_directory(source_dir: Path) -> str:
+    return "{}-{}".format(source_dir.name, utc_now_iso().replace(":", "").replace("-", ""))
+
+
+def _combine_source_datasets(package_root: Path, batch_id: str, source_dir: Path, source_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    ensure_dir(package_root / "images")
+    ensure_dir(package_root / "labels")
+    splits_dir = ensure_dir(package_root / "splits")
+
+    combined_train = []
+    combined_val = []
+    combined_entries = []
+    package_sources = []
+    total_target_detections = 0
+    total_frames_with_target_detections = 0
+    class_name = "person"
+
+    for index, item in enumerate(source_results, start=1):
+        dataset_root = Path(item["dataset_root"])
+        dataset_manifest = item["dataset_manifest"]
+        class_map = dataset_manifest.get("class_map") or {"0": class_name}
+        source_class_name = class_map.get("0") or dataset_manifest.get("target_class_name") or class_name
+        if source_class_name != class_name:
+            raise RuntimeError(
+                "DATASET_CLASS_MISMATCH: expected {} but found {} in {}".format(
+                    class_name, source_class_name, str(dataset_root)
+                )
+            )
+
+        train_entries = _split_entries(dataset_root, "train")
+        val_entries = _split_entries(dataset_root, "val")
+        prefix = "{:02d}_{}".format(index, Path(item["source_path"]).stem)
+        remapped_entries = {}
+
+        for split_name, entries, destination in (
+            ("train", train_entries, combined_train),
+            ("val", val_entries, combined_val),
+        ):
+            for entry in entries:
+                remapped = _copy_split_entry(dataset_root, entry, package_root, prefix)
+                remapped_entries[entry] = {"image_path": remapped, "split": split_name}
+                destination.append(remapped)
+
+        dataset_entries = dataset_manifest.get("entries") or []
+        for dataset_entry in dataset_entries:
+            original_image_path = dataset_entry.get("image_path")
+            remapped = remapped_entries.get(original_image_path)
+            if remapped is None:
+                continue
+            combined_entries.append(
+                {
+                    "source_path": item["source_path"],
+                    "source_clip_id": item["clip_id"],
+                    "source_run_id": item["run_id"],
+                    "source_vision_job_id": item["vision_job_id"],
+                    "source_dataset_root": str(dataset_root),
+                    "source_image_path": original_image_path,
+                    "source_label_path": dataset_entry.get("label_path"),
+                    "image_path": remapped["image_path"],
+                    "label_path": remapped["image_path"].replace("images/", "labels/").rsplit(".", 1)[0] + ".txt",
+                    "split": remapped["split"],
+                    "frame_num": dataset_entry.get("frame_num"),
+                    "timestamp_sec": dataset_entry.get("timestamp_sec"),
+                    "source_timestamp_sec": dataset_entry.get("source_timestamp_sec"),
+                    "target_detection_count": dataset_entry.get("target_detection_count", 0),
+                }
+            )
+
+        total_target_detections += int(dataset_manifest.get("total_target_detections", 0))
+        total_frames_with_target_detections += int(dataset_manifest.get("frames_with_target_detections", 0))
+        package_sources.append(
+            {
+                "source_path": item["source_path"],
+                "clip_id": item["clip_id"],
+                "run_id": item["run_id"],
+                "vision_job_id": item["vision_job_id"],
+                "selected": item["selected"],
+                "selection_reason": item["selection_reason"],
+                "dataset_root": str(dataset_root),
+                "dataset_manifest_path": item["dataset_manifest_path"],
+                "image_count": int(dataset_manifest.get("image_count", 0)),
+                "label_count": int(dataset_manifest.get("label_count", 0)),
+                "train_image_count": int(dataset_manifest.get("train_image_count", 0)),
+                "val_image_count": int(dataset_manifest.get("val_image_count", 0)),
+            }
+        )
+
+    (splits_dir / "train.txt").write_text("\n".join(combined_train) + ("\n" if combined_train else ""))
+    (splits_dir / "val.txt").write_text("\n".join(combined_val) + ("\n" if combined_val else ""))
+    _write_dataset_yaml(package_root, class_name)
+
+    manifest = {
+        "created_at": utc_now_iso(),
+        "package_id": batch_id,
+        "target_class_name": class_name,
+        "class_map": {"0": class_name},
+        "source_directory": str(source_dir),
+        "source_count": len(package_sources),
+        "image_count": len(combined_train) + len(combined_val),
+        "label_count": len(combined_train) + len(combined_val),
+        "train_image_count": len(combined_train),
+        "val_image_count": len(combined_val),
+        "frames_with_target_detections": total_frames_with_target_detections,
+        "total_target_detections": total_target_detections,
+        "sources": package_sources,
+        "entries": combined_entries,
+    }
+    write_json(package_root / "manifest.json", manifest)
+    return manifest
 
 
 def process_file(
@@ -307,4 +479,94 @@ def smoke_test(
         "requested_window": requested_window,
         "job_detection_summary": job_detection_summary,
         "windowing_decision": pipeline_summary.get("windowing_decision"),
+    }
+
+
+def process_directory(
+    source_dir: str,
+    edge_config_path: str,
+    policy_config_path: str,
+    output_root_override: str = "",
+    vision_api_url_override: str = "",
+    package_name: str = "",
+) -> Dict[str, Any]:
+    edge_overrides = {
+        "poll_timeout_sec": 600.0,
+        "vision_request": {"output_mode": "dataset_package", "generate_preview_video": False},
+    }
+    if output_root_override:
+        edge_overrides["output_root"] = output_root_override
+    if vision_api_url_override:
+        edge_overrides["vision_api_url"] = vision_api_url_override
+
+    edge_config = load_edge_config(edge_config_path, overrides=edge_overrides)
+    source_dir_path = expand_path(source_dir)
+    sources = _list_video_sources(source_dir_path)
+    output_root = expand_path(edge_config.output_root)
+    package_id = package_name or _package_id_for_directory(source_dir_path)
+    package_root = output_root / "ultralytics_packages" / package_id
+    if package_root.exists():
+        raise RuntimeError("PACKAGE_ROOT_ALREADY_EXISTS: {}".format(str(package_root)))
+
+    source_results = []
+    for source_path in sources:
+        result = process_file(
+            source=str(source_path),
+            edge_config_path=edge_config_path,
+            policy_config_path=policy_config_path,
+            output_root_override=output_root_override,
+            vision_api_url_override=vision_api_url_override,
+            edge_config_overrides={"vision_request": edge_overrides["vision_request"]},
+        )
+        run_dir = Path(result["run_dir"])
+        vision_job_manifest = read_json(run_dir / "vision_job_manifest.json")
+        dataset_manifest_path_value = vision_job_manifest.get("dataset_manifest_path")
+        if not dataset_manifest_path_value:
+            raise RuntimeError("VISION_API_DATASET_MANIFEST_MISSING: {}".format(str(run_dir / "vision_job_manifest.json")))
+        dataset_manifest_path = Path(dataset_manifest_path_value)
+        if not dataset_manifest_path.exists():
+            raise FileNotFoundError("VISION_API_DATASET_MANIFEST_NOT_FOUND: {}".format(str(dataset_manifest_path)))
+        source_results.append(
+            {
+                "source_path": str(source_path),
+                "clip_id": result["clip_id"],
+                "run_id": result["run_id"],
+                "vision_job_id": result["vision_job_id"],
+                "selected": result["selected"],
+                "selection_reason": result["selection_reason"],
+                "dataset_root": str(dataset_manifest_path.parent),
+                "dataset_manifest_path": str(dataset_manifest_path),
+                "dataset_manifest": read_json(dataset_manifest_path),
+            }
+        )
+
+    combined_manifest = _combine_source_datasets(
+        package_root=package_root,
+        batch_id=package_id,
+        source_dir=source_dir_path,
+        source_results=source_results,
+    )
+    return {
+        "ok": True,
+        "source_dir": str(source_dir_path),
+        "source_count": len(source_results),
+        "package_id": package_id,
+        "package_root": str(package_root),
+        "manifest_path": str(package_root / "manifest.json"),
+        "image_count": combined_manifest["image_count"],
+        "label_count": combined_manifest["label_count"],
+        "train_image_count": combined_manifest["train_image_count"],
+        "val_image_count": combined_manifest["val_image_count"],
+        "sources": [
+            {
+                "source_path": item["source_path"],
+                "clip_id": item["clip_id"],
+                "run_id": item["run_id"],
+                "vision_job_id": item["vision_job_id"],
+                "dataset_manifest_path": item["dataset_manifest_path"],
+                "selected": item["selected"],
+                "selection_reason": item["selection_reason"],
+            }
+            for item in source_results
+        ],
     }

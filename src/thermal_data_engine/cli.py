@@ -12,6 +12,7 @@ from thermal_data_engine.agent_tools.inspect import (
     recent_runs,
     validate_ultralytics_package,
 )
+from thermal_data_engine.edge.pipeline import process_directory
 from thermal_data_engine.edge.pipeline import process_file
 from thermal_data_engine.edge.pipeline import smoke_test
 
@@ -26,6 +27,14 @@ def _build_parser() -> argparse.ArgumentParser:
     process_parser.add_argument("--policy-config", default="configs/data/clip_policy.yaml")
     process_parser.add_argument("--output-root", default="")
     process_parser.add_argument("--vision-api-url", default="")
+
+    process_dir_parser = subparsers.add_parser("process-directory")
+    process_dir_parser.add_argument("--source-dir", required=True)
+    process_dir_parser.add_argument("--edge-config", default="configs/edge/default.yaml")
+    process_dir_parser.add_argument("--policy-config", default="configs/data/clip_policy.yaml")
+    process_dir_parser.add_argument("--output-root", default="")
+    process_dir_parser.add_argument("--vision-api-url", default="")
+    process_dir_parser.add_argument("--package-name", default="")
 
     smoke_parser = subparsers.add_parser("smoke-test")
     smoke_parser.add_argument("--source", required=True)
@@ -86,6 +95,18 @@ def main() -> None:
             policy_config_path=args.policy_config,
             output_root_override=args.output_root,
             vision_api_url_override=args.vision_api_url,
+        )
+        _print_json(result)
+        return
+
+    if args.command == "process-directory":
+        result = process_directory(
+            source_dir=args.source_dir,
+            edge_config_path=args.edge_config,
+            policy_config_path=args.policy_config,
+            output_root_override=args.output_root,
+            vision_api_url_override=args.vision_api_url,
+            package_name=args.package_name,
         )
         _print_json(result)
         return
