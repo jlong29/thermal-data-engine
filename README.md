@@ -74,6 +74,15 @@ Explicitly excluded:
 - desktop orchestration
 - DeepStream control logic already owned by `vision_api`
 
+## Downstream handoff phases
+
+This repo now treats downstream handoff as two distinct package phases:
+
+- **Phase 1, image datasets**: produce a flat Ultralytics-style image dataset for immediate hotter-machine smoke testing and early fine-tuning checks.
+- **Phase 2, video clip datasets**: preserve temporal structure more explicitly, including clip provenance, frame ordering, and track continuity strongly enough for downstream tracking-aware evaluation.
+
+Phase 1 is real and validated today. Phase 2 is the next package class to define and build, not an abandoned objective.
+
 ## Install
 
 Create and activate a local virtualenv first, then upgrade packaging tools and install the package in editable mode:
@@ -237,22 +246,24 @@ When a run has a bounded `start_ts` and `end_ts`, bundle writing now tries to cu
 
 Bundle manifests now record `extra.clip_artifact.write_mode`, and `inspect clip-artifacts` summarizes how often bundles were written by segment extraction versus source-copy fallback.
 
-Combined training-facing packages:
+Combined training-facing packages, phase 1 image dataset:
 
 ```text
 <output_root>/ultralytics_packages/<package_id>/
 ├─ dataset.yaml
 ├─ images/
 ├─ labels/
-├─ splits/
-│  ├─ train.txt
-│  └─ val.txt
-└─ manifest.json
+├─ manifest.json
+└─ splits/
+   ├─ train.txt
+   └─ val.txt
 ```
 
 `manifest.json` records which source files and `vision_api` jobs contributed each packaged frame so the desktop fine-tuning machine gets one inspectable handoff root instead of a pile of per-job datasets.
 
-For the staged thermal-owned packaging migration, `inspect ultralytics-package` validates the current training-facing package contract against the existing Ultralytics-style dataset layout. It checks for the expected `images/`, `labels/`, `splits/train.txt`, `splits/val.txt`, `dataset.yaml`, per-image label files, and normalized YOLO label rows so tomorrow's hotter-machine load/train smoke test has a concrete readiness check.
+For the staged thermal-owned packaging migration, `inspect ultralytics-package` validates the current training-facing package contract against the existing Ultralytics-style dataset layout. It checks for the expected `images/`, `labels/`, `splits/train.txt`, `splits/val.txt`, `dataset.yaml`, per-image label files, and normalized YOLO label rows so the hotter-machine load/train smoke test has a concrete readiness check.
+
+Phase 2, a temporally meaningful video-clip dataset package, is still to be defined. That future package should preserve richer sequence structure than the current flat image export rather than pretending the phase 1 layout is the final downstream format.
 
 Optional local upload copies:
 
