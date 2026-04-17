@@ -1,0 +1,32 @@
+device_id: "edge-device-local"
+vision_api_url: "http://127.0.0.1:8000"
+output_root: "~/.openclaw/workspace/outputs/thermal_data_engine"
+bundle_subdir: "bundles"
+run_subdir: "runs"
+upload_subdir: "uploads"
+poll_interval_sec: 1.0
+poll_timeout_sec: 600.0
+copy_clip_source: true
+write_run_record: true
+vision_request:
+  job_label_prefix: "thermal_edge_training_sample"
+  model_profile: "yolo11_person_v1"
+  output_mode: "dataset_package"
+  confidence_threshold: 0.25
+  frame_stride: 2
+  max_frames: null
+  max_duration_sec: 10.0
+  start_time_sec: 0.0
+  suspicious_fps_threshold: 120.0
+  min_duration_sec_on_suspicious_fps: 10.0
+  dataset_burst_gap_frames: 2
+  generate_preview_video: false
+  overwrite: false
+tracking:
+  iou_match_threshold: 0.3
+  max_gap_frames: 2
+  min_track_frames: 2
+upload:
+  enabled: false
+  backend: "local_copy"
+  local_root: ""

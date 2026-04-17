@@ -22,8 +22,8 @@
 - [x] A repo-local CLI path exists for processing a directory of videos.
 - [x] The directory path assembles one combined Ultralytics-style package under `outputs/thermal_data_engine`.
 - [x] Combined package contents stay structurally compatible with the existing `inspect ultralytics-package` validator.
-- [ ] The incoming sample folder has been processed end to end against live `vision_api`.
-- [ ] The resulting combined package is validated and ready for desktop handoff.
+- [x] The incoming sample folder has been processed end to end against live `vision_api`.
+- [x] The resulting combined package is validated and ready for desktop handoff.
 
 ### Relevant files (why)
 - `src/thermal_data_engine/cli.py` — user-facing command surface
@@ -46,16 +46,25 @@
 - Fast: `python3 -m compileall src tests`
 - Targeted: `python3 -m pytest tests/test_pipeline.py`
 - Full: `python3 -m pytest tests`
-- Live: `python3 -m thermal_data_engine.cli process-directory --source-dir ~/.openclaw/workspace/datasets/incoming --output-root ~/.openclaw/workspace/outputs/thermal_data_engine --vision-api-url http://127.0.0.1:8000 --package-name incoming-sample`
-- Package check: `python3 -m thermal_data_engine.cli inspect ultralytics-package --path ~/.openclaw/workspace/outputs/thermal_data_engine/ultralytics_packages/incoming-sample`
+- Live: `PYTHONPATH=src python3 -m thermal_data_engine.cli process-directory --source-dir ~/.openclaw/workspace/datasets/incoming --output-root ~/.openclaw/workspace/outputs/thermal_data_engine --vision-api-url http://127.0.0.1:8000 --package-name incoming-sample`
+- Package check: `PYTHONPATH=src python3 -m thermal_data_engine.cli inspect ultralytics-package --path ~/.openclaw/workspace/outputs/thermal_data_engine/ultralytics_packages/incoming-sample`
+
+### Blockers
+- None. The live `vision_api` service was reachable at `http://127.0.0.1:8000` even though `/health` still returned `404`, and the batch handoff package was validated against the real runtime.
 
 ### Risks / gotchas
 - Multiple per-job dataset packages can reuse filenames like `bounded_input_frameXXXX.jpg`, so the combined package must rename entries deterministically to avoid collisions.
-- `vision_api` must be live before the folder run starts.
+- `vision_api` being reachable on port `8000` is a better truth test than probing `/health`; this host currently serves docs on `8000` while `/health` still returns `404`.
+- The outer `process-directory` CLI can be interrupted after the per-file `vision_api` jobs finish but before the final combined package is written, which can leave an empty run directory for the last source while the per-job dataset package itself is already complete.
 - Some source videos may yield zero labeled frames; the combined package must still stay inspectable.
 
 ### Decision rule for defaults
 - Default to processing all supported video files in the source directory in sorted order and emit one combined package rooted under `ultralytics_packages/`.
+
+### Handoff result
+- Live batch evidence now exists at `outputs/thermal_data_engine/ultralytics_packages/incoming-sample/`.
+- Package validation passed with `29` images, `29` labels, `22` train entries, and `7` val entries across the three incoming MP4 files.
+- Source provenance is captured in `outputs/thermal_data_engine/ultralytics_packages/incoming-sample/manifest.json`, including the zero-label `example.mp4` input.
 
 ### Deferred work note
 - Do not redesign train/val split strategy beyond preserving each source package's split assignments in the combined package.

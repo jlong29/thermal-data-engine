@@ -188,6 +188,19 @@ python3 -m thermal_data_engine.cli smoke-test \
 
 Use `--use-edge-window` when you want the smoke test to keep the bounded runtime window from the selected edge profile instead of replacing it with the default smoke-test window.
 
+For a denser training-oriented sample package, use the named profile below instead of the conservative default:
+
+```bash
+python3 -m thermal_data_engine.cli process-directory \
+  --source-dir ~/.openclaw/workspace/datasets/incoming \
+  --edge-config configs/edge/training_sample.yaml \
+  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
+  --vision-api-url http://127.0.0.1:8000 \
+  --package-name incoming-training-sample
+```
+
+That profile keeps a longer 10 second bounded window, runs a denser `frame_stride: 2`, and loosens burst dedup to `dataset_burst_gap_frames: 2` so the handoff package is better suited for a small fine-tuning smoke test.
+
 Inspect saved bundles:
 
 ```bash

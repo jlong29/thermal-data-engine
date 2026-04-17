@@ -57,10 +57,28 @@ class VisionApiClient(object):
     def get_job(self, job_id: str) -> Dict[str, Any]:
         return self._request_json("GET", "/v1/jobs/{}".format(job_id))
 
+    def _is_retriable_poll_error(self, exc: VisionApiError) -> bool:
+        message = str(exc)
+        return (
+            "VISION_API_UNREACHABLE" in message
+            or "VISION_API_HTTP_ERROR 500" in message
+            or "VISION_API_HTTP_ERROR 502" in message
+            or "VISION_API_HTTP_ERROR 503" in message
+            or "JOB_STATUS_TEMPORARILY_UNREADABLE" in message
+        )
+
     def wait_for_job(self, job_id: str, poll_interval_sec: float, timeout_sec: float) -> VisionJobResult:
         start = time.time()
         while True:
-            status_payload = self.get_job(job_id)
+            try:
+                status_payload = self.get_job(job_id)
+            except VisionApiError as exc:
+                if self._is_retriable_poll_error(exc):
+                    if time.time() - start > timeout_sec:
+                        raise VisionApiError("VISION_API_POLL_TIMEOUT {} after {:.1f}s".format(job_id, timeout_sec))
+                    time.sleep(poll_interval_sec)
+                    continue
+                raise
             status = status_payload.get("status", "")
             if status == "completed":
                 output_dir = status_payload.get("output_dir")
@@ -83,4 +101,3 @@ class VisionApiClient(object):
         if not manifest_path.exists():
             raise VisionApiError("VISION_API_MANIFEST_MISSING: {}".format(str(manifest_path)))
         return read_json(manifest_path)
-
