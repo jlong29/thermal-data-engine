@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from thermal_data_engine.common.models import EdgeConfig
 from thermal_data_engine.agent_tools.inspect import validate_ultralytics_package
 from thermal_data_engine.edge import pipeline
@@ -46,6 +48,31 @@ def test_build_job_payload_switches_to_duration_for_suspicious_fps(tmp_path, mon
     assert payload["max_duration_sec"] == 5.0
     assert windowing["decision"]["mode"] == "auto_duration_override"
     assert windowing["decision"]["reason"] == "suspicious_high_fps"
+
+
+def test_build_job_payload_uses_27fps_fallback_for_highish_fps(tmp_path, monkeypatch):
+    datasets_root = tmp_path / "datasets"
+    incoming_root = datasets_root / "incoming"
+    incoming_root.mkdir(parents=True)
+    dataset_source = incoming_root / "input.mp4"
+    dataset_source.write_bytes(b"mp4")
+
+    config = EdgeConfig()
+    config.vision_request.max_frames = 1200
+    config.vision_request.max_duration_sec = None
+    config.vision_request.fallback_fps = 27.0
+    config.vision_request.fallback_fps_threshold = 40.0
+    config.vision_request.suspicious_fps_threshold = 120.0
+
+    monkeypatch.setattr(pipeline, "DATASETS_ROOT", datasets_root)
+    monkeypatch.setattr(pipeline, "probe_video_metadata", lambda path: {"fps": 50.0, "avg_frame_rate": "50/1"})
+
+    payload, windowing = pipeline._build_job_payload(config, dataset_source)
+
+    assert payload["max_frames"] is None
+    assert payload["max_duration_sec"] == pytest.approx(1200.0 / 27.0)
+    assert windowing["decision"]["reason"] == "high_fps_using_fallback"
+    assert windowing["decision"]["fallback_fps"] == 27.0
 
 
 def test_process_directory_combines_dataset_packages(tmp_path, monkeypatch):
@@ -153,3 +180,129 @@ def test_process_directory_combines_dataset_packages(tmp_path, monkeypatch):
     assert len(manifest["entries"]) == 4
     assert validation["ok"] is True
     assert validation["split_counts"] == {"train": 2, "val": 2}
+
+
+def test_process_directory_preserves_profile_poll_timeout(tmp_path, monkeypatch):
+    incoming_root = tmp_path / "incoming"
+    incoming_root.mkdir()
+    (incoming_root / "alpha.mp4").write_bytes(b"mp4")
+
+    output_root = tmp_path / "output"
+    captured = {}
+
+    def fake_load_edge_config(path, overrides=None):
+        captured["overrides"] = overrides
+        config = EdgeConfig()
+        config.output_root = str(output_root)
+        config.poll_timeout_sec = 7200.0
+        return config
+
+    def fake_process_file(**kwargs):
+        source_path = Path(kwargs["source"])
+        dataset_root = tmp_path / "jobs" / source_path.stem / "dataset"
+        (dataset_root / "images").mkdir(parents=True, exist_ok=True)
+        (dataset_root / "labels").mkdir(parents=True, exist_ok=True)
+        (dataset_root / "splits").mkdir(parents=True, exist_ok=True)
+        (dataset_root / "images" / "frame.jpg").write_bytes(b"jpg")
+        (dataset_root / "labels" / "frame.txt").write_text("0 0.5 0.5 0.25 0.25\n")
+        (dataset_root / "splits" / "train.txt").write_text("images/frame.jpg\n")
+        (dataset_root / "splits" / "val.txt").write_text("")
+        (dataset_root / "dataset.yaml").write_text("path: .\ntrain: splits/train.txt\nval: splits/val.txt\nnames:\n  0: person\n")
+        pipeline.write_json(
+            dataset_root / "manifest.json",
+            {
+                "target_class_name": "person",
+                "class_map": {"0": "person"},
+                "image_count": 1,
+                "label_count": 1,
+                "train_image_count": 1,
+                "val_image_count": 0,
+                "frames_with_target_detections": 1,
+                "total_target_detections": 1,
+                "entries": [
+                    {
+                        "frame_num": 1,
+                        "timestamp_sec": 0.1,
+                        "source_timestamp_sec": 0.1,
+                        "target_detection_count": 1,
+                        "image_path": "images/frame.jpg",
+                        "label_path": "labels/frame.txt",
+                    }
+                ],
+            },
+        )
+        run_dir = tmp_path / "runs" / source_path.stem
+        run_dir.mkdir(parents=True, exist_ok=True)
+        pipeline.write_json(run_dir / "vision_job_manifest.json", {"dataset_manifest_path": str(dataset_root / "manifest.json")})
+        return {
+            "clip_id": "clip-alpha",
+            "run_id": "run-alpha",
+            "run_dir": str(run_dir),
+            "selected": True,
+            "selection_reason": "edge_activity",
+            "bundle_dir": str(tmp_path / "bundles" / "alpha"),
+            "vision_job_id": "job-alpha",
+            "frame_count": 1,
+            "detection_count": 1,
+            "track_count": 1,
+            "upload": {"status": "skipped", "uri": ""},
+        }
+
+    monkeypatch.setattr(pipeline, "load_edge_config", fake_load_edge_config)
+    monkeypatch.setattr(pipeline, "process_file", fake_process_file)
+
+    result = pipeline.process_directory(
+        source_dir=str(incoming_root),
+        edge_config_path="configs/edge/training_sample.yaml",
+        policy_config_path="configs/data/clip_policy.yaml",
+        package_name="timeout-check",
+    )
+
+    assert result["ok"] is True
+    assert "poll_timeout_sec" not in captured["overrides"]
+
+
+def test_process_file_writes_request_and_acceptance_before_wait(tmp_path, monkeypatch):
+    source_path = tmp_path / "input.mp4"
+    source_path.write_bytes(b"mp4")
+    datasets_root = tmp_path / "datasets"
+    incoming_root = datasets_root / "incoming"
+    incoming_root.mkdir(parents=True)
+    dataset_source = incoming_root / "input.mp4"
+    dataset_source.write_bytes(b"mp4")
+
+    output_root = tmp_path / "output"
+
+    def fake_load_edge_config(path, overrides=None):
+        config = EdgeConfig()
+        config.output_root = str(output_root)
+        return config
+
+    class FakeClient(object):
+        def __init__(self, base_url):
+            self.base_url = base_url
+
+        def submit_yolo_job(self, payload):
+            return {"job_id": "job-123", "accepted": True, "output_dir": "/tmp/job"}
+
+        def wait_for_job(self, job_id, poll_interval_sec, timeout_sec):
+            raise RuntimeError("VISION_API_POLL_TIMEOUT {} after {:.1f}s".format(job_id, timeout_sec))
+
+    monkeypatch.setattr(pipeline, "DATASETS_ROOT", datasets_root)
+    monkeypatch.setattr(pipeline, "load_edge_config", fake_load_edge_config)
+    monkeypatch.setattr(pipeline, "load_policy_config", lambda path: object())
+    monkeypatch.setattr(pipeline, "VisionApiClient", FakeClient)
+    monkeypatch.setattr(pipeline, "probe_video_metadata", lambda path: {"fps": 25.0})
+
+    with pytest.raises(RuntimeError, match="VISION_API_POLL_TIMEOUT"):
+        pipeline.process_file(
+            source=str(dataset_source),
+            edge_config_path="configs/edge/training_sample.yaml",
+            policy_config_path="configs/data/clip_policy.yaml",
+        )
+
+    run_dirs = list((output_root / "runs").iterdir())
+    assert len(run_dirs) == 1
+    run_dir = run_dirs[0]
+    assert (run_dir / "vision_job_request.json").exists()
+    assert (run_dir / "vision_job_accepted.json").exists()

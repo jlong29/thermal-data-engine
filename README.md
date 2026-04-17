@@ -199,7 +199,7 @@ python3 -m thermal_data_engine.cli process-directory \
   --package-name incoming-training-sample
 ```
 
-That profile keeps a longer 10 second bounded window, runs a denser `frame_stride: 2`, and loosens burst dedup to `dataset_burst_gap_frames: 2` so the handoff package is better suited for a small fine-tuning smoke test.
+That profile lowers detector confidence to `0.10`, runs a denser `frame_stride: 2`, preserves a long poll budget for Xavier NX, and treats `27 fps` as the thermal-camera fallback when container fps looks inflated. Suspiciously high fps still falls back to the short `10s` safeguard, while moderately high encoded fps can be converted into a duration using the 27 fps fallback so the handoff package is better suited for a small fine-tuning smoke test.
 
 Inspect saved bundles:
 

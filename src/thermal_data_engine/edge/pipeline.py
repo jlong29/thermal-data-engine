@@ -49,16 +49,23 @@ def _resolve_windowing(config: EdgeConfig, source_path: Path) -> Dict[str, Any]:
 
     decision["source_probe"] = source_probe
     fps = source_probe.get("fps")
+    fallback_fps = vision.fallback_fps if vision.fallback_fps > 0 else None
     min_duration_sec = vision.min_duration_sec_on_suspicious_fps
-    if (
-        vision.max_duration_sec is None
-        and vision.max_frames is not None
-        and fps is not None
-        and fps >= vision.suspicious_fps_threshold
-        and min_duration_sec > 0
-    ):
-        implied_window_sec = float(vision.max_frames) / float(fps)
-        if implied_window_sec < min_duration_sec:
+    if vision.max_duration_sec is None and vision.max_frames is not None:
+        if fps is None or fps <= 0:
+            if fallback_fps is not None:
+                derived_duration_sec = float(vision.max_frames) / float(fallback_fps)
+                payload_overrides["max_frames"] = None
+                payload_overrides["max_duration_sec"] = derived_duration_sec
+                decision = {
+                    "mode": "auto_duration_override",
+                    "reason": "missing_fps_using_fallback",
+                    "source_probe": source_probe,
+                    "fallback_fps": fallback_fps,
+                    "derived_duration_sec": derived_duration_sec,
+                }
+        elif fps >= vision.suspicious_fps_threshold and min_duration_sec > 0:
+            implied_window_sec = float(vision.max_frames) / float(fps)
             payload_overrides["max_frames"] = None
             payload_overrides["max_duration_sec"] = min_duration_sec
             decision = {
@@ -67,6 +74,19 @@ def _resolve_windowing(config: EdgeConfig, source_path: Path) -> Dict[str, Any]:
                 "source_probe": source_probe,
                 "implied_window_sec": implied_window_sec,
                 "min_duration_sec_on_suspicious_fps": min_duration_sec,
+            }
+        elif fallback_fps is not None and fps >= vision.fallback_fps_threshold:
+            derived_duration_sec = float(vision.max_frames) / float(fallback_fps)
+            payload_overrides["max_frames"] = None
+            payload_overrides["max_duration_sec"] = derived_duration_sec
+            decision = {
+                "mode": "auto_duration_override",
+                "reason": "high_fps_using_fallback",
+                "source_probe": source_probe,
+                "reported_fps": fps,
+                "fallback_fps": fallback_fps,
+                "fallback_fps_threshold": vision.fallback_fps_threshold,
+                "derived_duration_sec": derived_duration_sec,
             }
 
     return {"payload_overrides": payload_overrides, "decision": decision}
@@ -308,6 +328,8 @@ def process_file(
     client = VisionApiClient(edge_config.vision_api_url)
     job_payload, windowing = _build_job_payload(edge_config, source_path)
     accepted = client.submit_yolo_job(job_payload)
+    write_json(run_dir / "vision_job_request.json", job_payload)
+    write_json(run_dir / "vision_job_accepted.json", accepted)
     result = client.wait_for_job(
         accepted["job_id"],
         poll_interval_sec=edge_config.poll_interval_sec,
@@ -349,8 +371,6 @@ def process_file(
         extra={"vision_job_manifest": job_manifest},
     )
 
-    write_json(run_dir / "vision_job_accepted.json", accepted)
-    write_json(run_dir / "vision_job_request.json", job_payload)
     write_json(run_dir / "vision_job_status.json", result.status_payload)
     write_json(run_dir / "vision_job_manifest.json", job_manifest)
 
@@ -491,7 +511,6 @@ def process_directory(
     package_name: str = "",
 ) -> Dict[str, Any]:
     edge_overrides = {
-        "poll_timeout_sec": 600.0,
         "vision_request": {"output_mode": "dataset_package", "generate_preview_video": False},
     }
     if output_root_override:
