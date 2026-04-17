@@ -83,7 +83,7 @@ This repo now treats downstream handoff as two distinct package phases:
 - **Phase 1, image datasets**: produce a flat Ultralytics-style image dataset for immediate hotter-machine smoke testing and early fine-tuning checks.
 - **Phase 2, video clip datasets**: preserve temporal structure more explicitly, including clip provenance, frame ordering, and track continuity strongly enough for downstream tracking-aware evaluation.
 
-Phase 1 is real and validated today. Phase 2 is the next package class to define and build, not an abandoned objective.
+Both package classes now exist on-device and have passed repo-local structural validation. The remaining work is downstream evaluation on the hotter machine, first for the phase 1 Ultralytics image package, then for the phase 2 temporal package.
 
 ## Install
 
