@@ -36,9 +36,9 @@
 - [x] Phase 1 incoming sample folder has been processed end to end against live `vision_api`.
 - [x] Phase 1 resulting combined package is validated and ready for desktop handoff.
 - [ ] Phase 1 downstream smoke test on the hotter machine is evaluated by the user and any concrete incompatibility is recorded.
-- [ ] Phase 2 package format is defined explicitly enough that temporal structure, clip provenance, and track continuity are preserved rather than flattened away.
-- [ ] Phase 2 package generation path exists in `thermal-data-engine`.
-- [ ] Phase 2 package is created from the incoming folder and validated structurally on-device.
+- [x] Phase 2 package format is defined explicitly enough that temporal structure, clip provenance, and track continuity are preserved rather than flattened away.
+- [x] Phase 2 package generation path exists in `thermal-data-engine`.
+- [x] Phase 2 package is created from the incoming folder and validated structurally on-device.
 - [ ] Phase 2 downstream smoke test or fit-for-purpose evaluation is performed by the user on the hotter machine.
 
 ### Relevant files (why)
@@ -78,11 +78,15 @@
 - Package check: `PYTHONPATH=src .venv/bin/python -m thermal_data_engine.cli inspect ultralytics-package --path ~/.openclaw/workspace/outputs/thermal_data_engine/ultralytics_packages/incoming-training-sample`
 
 #### Phase 2
-- To be defined in the repo before claiming a desktop-ready temporal package.
+- Fast: `python3 -m compileall src tests`
+- Targeted: `python3 -m pytest tests/test_pipeline.py tests/test_inspect.py -q`
+- Full: `python3 -m pytest tests -q`
+- Live: `PYTHONPATH=src .venv/bin/python -m thermal_data_engine.cli process-directory-video --source-dir ~/.openclaw/workspace/datasets/incoming --edge-config configs/edge/training_sample.yaml --output-root ~/.openclaw/workspace/outputs/thermal_data_engine --vision-api-url http://127.0.0.1:8000 --package-name incoming-video-sample`
+- Package check: `PYTHONPATH=src .venv/bin/python -m thermal_data_engine.cli inspect video-package --path ~/.openclaw/workspace/outputs/thermal_data_engine/video_packages/incoming-video-sample`
 
 ### Blockers
 - None for phase 1 package creation.
-- Phase 2 is intentionally blocked on defining the temporal handoff contract clearly enough that downstream evaluation is meaningful instead of accidental.
+- No current design blocker. The first temporal package contract is now defined in code and README.
 
 ### Risks / gotchas
 - Multiple per-job dataset packages can reuse filenames like `bounded_input_frameXXXX.jpg`, so the combined phase 1 package must rename entries deterministically to avoid collisions.
@@ -93,13 +97,16 @@
 
 ### Decision rule for defaults
 - Default phase 1 to processing all supported video files in the source directory in sorted order and emit one combined image package rooted under `ultralytics_packages/`.
-- Do not claim a default phase 2 package shape until the temporal contract is explicitly written down.
+- Default phase 2 to a clip-scoped package under `video_packages/` that copies the stable bundle contract per included clip and records package-level provenance in `manifest.json`.
 
 ### Handoff result so far
 - Phase 1 live batch evidence now exists at `outputs/thermal_data_engine/ultralytics_packages/incoming-training-sample/`.
 - Phase 1 package validation passed with `1519` images, `1519` labels, `1215` train entries, and `304` val entries across the three incoming MP4 files.
 - Source provenance is captured in `outputs/thermal_data_engine/ultralytics_packages/incoming-training-sample/manifest.json`.
 - Phase 1 is ready for the user's hotter-machine smoke test.
+- Phase 2 temporal package now exists at `outputs/thermal_data_engine/video_packages/incoming-video-sample/`.
+- Phase 2 package validation passed with `clip_count: 3`, `source_count: 3`, `selected_source_count: 3`, and no structural errors or warnings.
+- Phase 2 preserves one clip-scoped bundle per incoming source under `clips/<package_clip_id>/`, with package-level provenance recorded in `manifest.json`.
 
 ### Deferred work note
 - Do not redesign train/val split strategy beyond preserving each source package's split assignments in the combined phase 1 package.

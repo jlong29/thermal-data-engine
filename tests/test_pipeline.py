@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
+from thermal_data_engine.agent_tools.inspect import validate_ultralytics_package, validate_video_clip_package
 from thermal_data_engine.common.models import EdgeConfig
-from thermal_data_engine.agent_tools.inspect import validate_ultralytics_package
 from thermal_data_engine.edge import pipeline
 
 
@@ -260,6 +260,104 @@ def test_process_directory_preserves_profile_poll_timeout(tmp_path, monkeypatch)
 
     assert result["ok"] is True
     assert "poll_timeout_sec" not in captured["overrides"]
+
+
+def test_process_directory_video_combines_selected_bundles(tmp_path, monkeypatch):
+    incoming_root = tmp_path / "incoming"
+    incoming_root.mkdir()
+    source_paths = [incoming_root / "alpha.mp4", incoming_root / "beta.mp4"]
+    for path in source_paths:
+        path.write_bytes(b"mp4")
+
+    output_root = tmp_path / "output"
+
+    def fake_load_edge_config(path, overrides=None):
+        config = EdgeConfig()
+        config.output_root = str(output_root)
+        config.vision_api_url = "http://127.0.0.1:8000"
+        return config
+
+    def fake_process_file(**kwargs):
+        source_path = Path(kwargs["source"])
+        run_dir = tmp_path / "runs" / source_path.stem
+        bundle_dir = tmp_path / "bundles" / source_path.stem
+        run_dir.mkdir(parents=True, exist_ok=True)
+        if source_path.stem == "alpha":
+            bundle_dir.mkdir(parents=True, exist_ok=True)
+            (bundle_dir / "clip.mp4").write_bytes(b"mp4")
+            (bundle_dir / "detections.parquet").write_bytes(b"parquet")
+            (bundle_dir / "tracks.parquet").write_bytes(b"parquet")
+            pipeline.write_json(
+                bundle_dir / "clip_manifest.json",
+                {
+                    "clip_id": "clip-alpha",
+                    "run_id": "run-alpha",
+                    "vision_job_id": "job-alpha",
+                    "track_count": 1,
+                    "detection_count": 3,
+                    "tracker_type": "iou_greedy_v1",
+                    "selected": True,
+                    "created_at": "2026-04-17T16:00:00Z",
+                    "start_ts": "0.0",
+                    "end_ts": "4.0",
+                    "fps": 9.0,
+                    "frame_count": 36,
+                    "width": 640,
+                    "height": 512,
+                    "model_version": "yolo11_person_v1",
+                },
+            )
+            return {
+                "clip_id": "clip-alpha",
+                "run_id": "run-alpha",
+                "run_dir": str(run_dir),
+                "selected": True,
+                "selection_reason": "edge_activity",
+                "bundle_dir": str(bundle_dir),
+                "vision_job_id": "job-alpha",
+                "frame_count": 36,
+                "detection_count": 3,
+                "track_count": 1,
+                "upload": {"status": "skipped", "uri": ""},
+            }
+        return {
+            "clip_id": "clip-beta",
+            "run_id": "run-beta",
+            "run_dir": str(run_dir),
+            "selected": False,
+            "selection_reason": "no_detections",
+            "bundle_dir": str(bundle_dir),
+            "vision_job_id": "job-beta",
+            "frame_count": 0,
+            "detection_count": 0,
+            "track_count": 0,
+            "upload": {"status": "skipped", "uri": ""},
+        }
+
+    monkeypatch.setattr(pipeline, "load_edge_config", fake_load_edge_config)
+    monkeypatch.setattr(pipeline, "process_file", fake_process_file)
+
+    result = pipeline.process_directory_video(
+        source_dir=str(incoming_root),
+        edge_config_path="configs/edge/default.yaml",
+        policy_config_path="configs/data/clip_policy.yaml",
+        package_name="incoming-video-sample",
+    )
+
+    package_root = Path(result["package_root"])
+    manifest = pipeline.read_json(package_root / "manifest.json")
+    validation = validate_video_clip_package(str(package_root))
+
+    assert result["ok"] is True
+    assert result["source_count"] == 2
+    assert result["clip_count"] == 1
+    assert manifest["package_type"] == "thermal_video_clip_dataset"
+    assert manifest["clip_count"] == 1
+    assert manifest["source_count"] == 2
+    assert manifest["sources"][1]["included_in_package"] is False
+    assert validation["ok"] is True
+    assert validation["selected_source_count"] == 1
+    assert validation["skipped_source_count"] == 1
 
 
 def test_process_file_writes_request_and_acceptance_before_wait(tmp_path, monkeypatch):

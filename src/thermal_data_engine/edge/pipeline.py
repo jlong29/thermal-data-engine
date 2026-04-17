@@ -1,4 +1,5 @@
 import hashlib
+import re
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -16,6 +17,7 @@ from thermal_data_engine.vision_api.client import VisionApiClient
 
 
 _VIDEO_SUFFIXES = (".mp4", ".mov", ".m4v", ".avi", ".mkv")
+_PACKAGE_BUNDLE_FILENAMES = ("clip.mp4", "detections.parquet", "tracks.parquet", "clip_manifest.json")
 
 
 def _clip_id_for_source(source_path: Path) -> str:
@@ -188,6 +190,32 @@ def _package_id_for_directory(source_dir: Path) -> str:
     return "{}-{}".format(source_dir.name, utc_now_iso().replace(":", "").replace("-", ""))
 
 
+def _slug_fragment(value: str) -> str:
+    text = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip())
+    return text.strip("._-") or "item"
+
+
+def _package_clip_dir_name(index: int, source_path: Path, clip_id: str) -> str:
+    return "{:02d}_{}__{}".format(index, _slug_fragment(source_path.stem), _slug_fragment(clip_id))
+
+
+def _copy_bundle_artifacts(bundle_dir: Path, destination_dir: Path) -> Dict[str, str]:
+    ensure_dir(destination_dir)
+    copied_paths = {}
+    for filename in _PACKAGE_BUNDLE_FILENAMES:
+        source_path = bundle_dir / filename
+        if not source_path.exists():
+            raise FileNotFoundError("BUNDLE_ARTIFACT_MISSING: {}".format(str(source_path)))
+        destination_path = destination_dir / filename
+        shutil.copy2(source_path, destination_path)
+        copied_paths[filename] = str(destination_path)
+    return copied_paths
+
+
+def _bundle_manifest_path(bundle_dir: Path) -> Path:
+    return bundle_dir / "clip_manifest.json"
+
+
 def _combine_source_datasets(package_root: Path, batch_id: str, source_dir: Path, source_results: List[Dict[str, Any]]) -> Dict[str, Any]:
     ensure_dir(package_root / "images")
     ensure_dir(package_root / "labels")
@@ -290,6 +318,103 @@ def _combine_source_datasets(package_root: Path, batch_id: str, source_dir: Path
         "total_target_detections": total_target_detections,
         "sources": package_sources,
         "entries": combined_entries,
+    }
+    write_json(package_root / "manifest.json", manifest)
+    return manifest
+
+
+def _combine_video_packages(package_root: Path, batch_id: str, source_dir: Path, source_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    clips_root = ensure_dir(package_root / "clips")
+
+    package_sources = []
+    package_clips = []
+
+    for index, item in enumerate(source_results, start=1):
+        source_path = Path(item["source_path"])
+        bundle_dir = Path(item["bundle_dir"])
+        source_summary = {
+            "source_path": item["source_path"],
+            "clip_id": item["clip_id"],
+            "run_id": item["run_id"],
+            "run_dir": item["run_dir"],
+            "vision_job_id": item["vision_job_id"],
+            "selected": item["selected"],
+            "selection_reason": item["selection_reason"],
+            "frame_count": int(item.get("frame_count", 0)),
+            "detection_count": int(item.get("detection_count", 0)),
+            "track_count": int(item.get("track_count", 0)),
+            "bundle_dir": item["bundle_dir"],
+            "included_in_package": False,
+        }
+
+        if not item["selected"]:
+            package_sources.append(source_summary)
+            continue
+
+        bundle_manifest_path = _bundle_manifest_path(bundle_dir)
+        if not bundle_manifest_path.exists():
+            raise FileNotFoundError("SELECTED_BUNDLE_MANIFEST_NOT_FOUND: {}".format(str(bundle_manifest_path)))
+
+        clip_manifest = read_json(bundle_manifest_path)
+        package_clip_id = _package_clip_dir_name(index, source_path, item["clip_id"])
+        package_clip_dir = clips_root / package_clip_id
+        if package_clip_dir.exists():
+            raise RuntimeError("VIDEO_PACKAGE_CLIP_ALREADY_EXISTS: {}".format(str(package_clip_dir)))
+
+        _copy_bundle_artifacts(bundle_dir, package_clip_dir)
+        relative_clip_dir = str(package_clip_dir.relative_to(package_root)).replace("\\", "/")
+        artifact_paths = {
+            "clip_path": "{}/clip.mp4".format(relative_clip_dir),
+            "detections_path": "{}/detections.parquet".format(relative_clip_dir),
+            "tracks_path": "{}/tracks.parquet".format(relative_clip_dir),
+            "manifest_path": "{}/clip_manifest.json".format(relative_clip_dir),
+        }
+
+        source_summary.update(
+            {
+                "included_in_package": True,
+                "package_clip_id": package_clip_id,
+                "package_clip_dir": relative_clip_dir,
+                "bundle_manifest_path": str(bundle_manifest_path),
+            }
+        )
+        package_sources.append(source_summary)
+        package_clips.append(
+            {
+                "package_clip_id": package_clip_id,
+                "package_clip_dir": relative_clip_dir,
+                "source_path": item["source_path"],
+                "clip_id": item["clip_id"],
+                "run_id": item["run_id"],
+                "run_dir": item["run_dir"],
+                "vision_job_id": item["vision_job_id"],
+                "selection_reason": item["selection_reason"],
+                "created_at": clip_manifest.get("created_at"),
+                "start_ts": clip_manifest.get("start_ts"),
+                "end_ts": clip_manifest.get("end_ts"),
+                "fps": clip_manifest.get("fps"),
+                "frame_count": clip_manifest.get("frame_count"),
+                "width": clip_manifest.get("width"),
+                "height": clip_manifest.get("height"),
+                "detection_count": clip_manifest.get("detection_count"),
+                "track_count": clip_manifest.get("track_count"),
+                "model_version": clip_manifest.get("model_version"),
+                "tracker_type": clip_manifest.get("tracker_type"),
+                "artifacts": artifact_paths,
+            }
+        )
+
+    manifest = {
+        "package_type": "thermal_video_clip_dataset",
+        "package_version": "v1",
+        "created_at": utc_now_iso(),
+        "package_id": batch_id,
+        "source_directory": str(source_dir),
+        "source_count": len(package_sources),
+        "clip_count": len(package_clips),
+        "bundle_contract": list(_PACKAGE_BUNDLE_FILENAMES),
+        "sources": package_sources,
+        "clips": package_clips,
     }
     write_json(package_root / "manifest.json", manifest)
     return manifest
@@ -585,6 +710,88 @@ def process_directory(
                 "dataset_manifest_path": item["dataset_manifest_path"],
                 "selected": item["selected"],
                 "selection_reason": item["selection_reason"],
+            }
+            for item in source_results
+        ],
+    }
+
+
+def process_directory_video(
+    source_dir: str,
+    edge_config_path: str,
+    policy_config_path: str,
+    output_root_override: str = "",
+    vision_api_url_override: str = "",
+    package_name: str = "",
+) -> Dict[str, Any]:
+    edge_overrides = {
+        "vision_request": {"output_mode": "dataset_package", "generate_preview_video": False},
+    }
+    if output_root_override:
+        edge_overrides["output_root"] = output_root_override
+    if vision_api_url_override:
+        edge_overrides["vision_api_url"] = vision_api_url_override
+
+    edge_config = load_edge_config(edge_config_path, overrides=edge_overrides)
+    source_dir_path = expand_path(source_dir)
+    sources = _list_video_sources(source_dir_path)
+    output_root = expand_path(edge_config.output_root)
+    package_id = package_name or _package_id_for_directory(source_dir_path)
+    package_root = output_root / "video_packages" / package_id
+    if package_root.exists():
+        raise RuntimeError("VIDEO_PACKAGE_ROOT_ALREADY_EXISTS: {}".format(str(package_root)))
+
+    source_results = []
+    for source_path in sources:
+        result = process_file(
+            source=str(source_path),
+            edge_config_path=edge_config_path,
+            policy_config_path=policy_config_path,
+            output_root_override=output_root_override,
+            vision_api_url_override=vision_api_url_override,
+            edge_config_overrides={"vision_request": edge_overrides["vision_request"]},
+        )
+        source_results.append(
+            {
+                "source_path": str(source_path),
+                "clip_id": result["clip_id"],
+                "run_id": result["run_id"],
+                "run_dir": result["run_dir"],
+                "selected": result["selected"],
+                "selection_reason": result["selection_reason"],
+                "bundle_dir": result["bundle_dir"],
+                "vision_job_id": result["vision_job_id"],
+                "frame_count": result["frame_count"],
+                "detection_count": result["detection_count"],
+                "track_count": result["track_count"],
+                "upload": result.get("upload"),
+            }
+        )
+
+    combined_manifest = _combine_video_packages(
+        package_root=package_root,
+        batch_id=package_id,
+        source_dir=source_dir_path,
+        source_results=source_results,
+    )
+    return {
+        "ok": True,
+        "source_dir": str(source_dir_path),
+        "source_count": len(source_results),
+        "package_id": package_id,
+        "package_root": str(package_root),
+        "manifest_path": str(package_root / "manifest.json"),
+        "clip_count": combined_manifest["clip_count"],
+        "bundle_contract": combined_manifest["bundle_contract"],
+        "sources": [
+            {
+                "source_path": item["source_path"],
+                "clip_id": item["clip_id"],
+                "run_id": item["run_id"],
+                "vision_job_id": item["vision_job_id"],
+                "selected": item["selected"],
+                "selection_reason": item["selection_reason"],
+                "bundle_dir": item["bundle_dir"],
             }
             for item in source_results
         ],
