@@ -9,6 +9,8 @@
 - writes a stable clip bundle contract
 - exposes local inspection helpers over saved artifacts
 
+It now also supports a phase 2 temporal handoff package that copies selected clip bundles into one inspectable package root without flattening away clip boundaries, bundle provenance, or track artifacts.
+
 ## Quick start
 
 If you want the shortest path from a fresh shell to a real smoke test, use two terminals.
@@ -73,6 +75,15 @@ Explicitly excluded:
 - annotation or CVAT workflows
 - desktop orchestration
 - DeepStream control logic already owned by `vision_api`
+
+## Downstream handoff phases
+
+This repo now treats downstream handoff as two distinct package phases:
+
+- **Phase 1, image datasets**: produce a flat Ultralytics-style image dataset for immediate hotter-machine smoke testing and early fine-tuning checks.
+- **Phase 2, video clip datasets**: preserve temporal structure more explicitly, including clip provenance, frame ordering, and track continuity strongly enough for downstream tracking-aware evaluation.
+
+Both package classes now exist on-device and have passed repo-local structural validation. The remaining work is downstream evaluation on the hotter machine, first for the phase 1 Ultralytics image package, then for the phase 2 temporal package.
 
 ## Install
 
@@ -153,6 +164,31 @@ python3 -m thermal_data_engine.cli process-file \
   --vision-api-url http://127.0.0.1:8000
 ```
 
+Process a whole folder of videos and assemble one training-facing Ultralytics package:
+
+```bash
+python3 -m thermal_data_engine.cli process-directory \
+  --source-dir ~/.openclaw/workspace/datasets/incoming \
+  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
+  --vision-api-url http://127.0.0.1:8000 \
+  --package-name incoming-sample
+```
+
+That command runs the normal per-file pipeline for each supported video in the folder, then combines the emitted per-job dataset packages into one handoff-ready package under `ultralytics_packages/<package_name>/`.
+
+Process a whole folder of videos and assemble one temporal video-clip package:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m thermal_data_engine.cli process-directory-video \
+  --source-dir ~/.openclaw/workspace/datasets/incoming \
+  --edge-config configs/edge/training_sample.yaml \
+  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
+  --vision-api-url http://127.0.0.1:8000 \
+  --package-name incoming-video-sample
+```
+
+That command processes the same source folder through the normal edge pipeline, then copies each selected clip bundle into `video_packages/<package_name>/clips/` and writes a package manifest that preserves source-path provenance, clip ids, run ids, `vision_api` job ids, and the stable bundle contract for each included clip.
+
 Run a fast bounded smoke test:
 
 ```bash
@@ -176,6 +212,19 @@ python3 -m thermal_data_engine.cli smoke-test \
 
 Use `--use-edge-window` when you want the smoke test to keep the bounded runtime window from the selected edge profile instead of replacing it with the default smoke-test window.
 
+For a denser training-oriented sample package, use the named profile below instead of the conservative default:
+
+```bash
+python3 -m thermal_data_engine.cli process-directory \
+  --source-dir ~/.openclaw/workspace/datasets/incoming \
+  --edge-config configs/edge/training_sample.yaml \
+  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
+  --vision-api-url http://127.0.0.1:8000 \
+  --package-name incoming-training-sample
+```
+
+That profile lowers detector confidence to `0.10`, runs a denser `frame_stride: 2`, preserves a long poll budget for Xavier NX, and treats `27 fps` as the thermal-camera fallback when container fps looks inflated. Suspiciously high fps still falls back to the short `10s` safeguard, while moderately high encoded fps can be converted into a duration using the 27 fps fallback so the handoff package is better suited for a small fine-tuning smoke test.
+
 Inspect saved bundles:
 
 ```bash
@@ -186,6 +235,7 @@ python3 -m thermal_data_engine.cli inspect clip-artifacts --root ~/.openclaw/wor
 python3 -m thermal_data_engine.cli inspect edge-status --root ~/.openclaw/workspace/outputs/thermal_data_engine
 python3 -m thermal_data_engine.cli inspect runs --root ~/.openclaw/workspace/outputs/thermal_data_engine
 python3 -m thermal_data_engine.cli inspect ultralytics-package --path ~/.openclaw/workspace/outputs/inference_jobs/<job_id>/dataset
+python3 -m thermal_data_engine.cli inspect video-package --path ~/.openclaw/workspace/outputs/thermal_data_engine/video_packages/incoming-video-sample
 ```
 
 ## Output layout
@@ -212,7 +262,42 @@ When a run has a bounded `start_ts` and `end_ts`, bundle writing now tries to cu
 
 Bundle manifests now record `extra.clip_artifact.write_mode`, and `inspect clip-artifacts` summarizes how often bundles were written by segment extraction versus source-copy fallback.
 
-For the staged thermal-owned packaging migration, `inspect ultralytics-package` validates the current training-facing package contract against the existing Ultralytics-style dataset layout. It checks for the expected `images/`, `labels/`, `splits/train.txt`, `splits/val.txt`, `dataset.yaml`, per-image label files, and normalized YOLO label rows so tomorrow's hotter-machine load/train smoke test has a concrete readiness check.
+Combined training-facing packages, phase 1 image dataset:
+
+```text
+<output_root>/ultralytics_packages/<package_id>/
+├─ dataset.yaml
+├─ images/
+├─ labels/
+├─ manifest.json
+└─ splits/
+   ├─ train.txt
+   └─ val.txt
+```
+
+`manifest.json` records which source files and `vision_api` jobs contributed each packaged frame so the desktop fine-tuning machine gets one inspectable handoff root instead of a pile of per-job datasets.
+
+For the staged thermal-owned packaging migration, `inspect ultralytics-package` validates the current training-facing package contract against the existing Ultralytics-style dataset layout. It checks for the expected `images/`, `labels/`, `splits/train.txt`, `splits/val.txt`, `dataset.yaml`, per-image label files, and normalized YOLO label rows so the hotter-machine load/train smoke test has a concrete readiness check.
+
+Phase 2 now has an explicit first package format. It preserves richer sequence structure than the current flat image export by packaging clip-scoped artifacts instead of pretending the phase 1 layout is the final downstream format.
+
+Temporal video-clip packages, phase 2:
+
+```text
+<output_root>/video_packages/<package_id>/
+├─ manifest.json
+└─ clips/
+   ├─ <package_clip_id>/
+   │  ├─ clip.mp4
+   │  ├─ clip_manifest.json
+   │  ├─ detections.parquet
+   │  └─ tracks.parquet
+   └─ ...
+```
+
+This package format preserves temporal structure by keeping each selected clip as a clip-scoped directory instead of flattening frames into one image pool. The package-level `manifest.json` records, for every included clip, the original `source_path`, `clip_id`, `run_id`, `vision_job_id`, selection reason, clip timing metadata, and relative artifact paths inside the package.
+
+`inspect video-package` validates this temporal package shape structurally. It checks the package root, `clips/` layout, `manifest.json`, the required copied bundle artifacts for each included clip, and key consistency fields between each copied `clip_manifest.json` and the package manifest.
 
 Optional local upload copies:
 

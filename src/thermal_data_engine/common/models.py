@@ -13,6 +13,8 @@ class VisionRequestConfig:
     max_frames: Optional[int] = 2000
     max_duration_sec: Optional[float] = None
     start_time_sec: float = 0.0
+    fallback_fps: float = 27.0
+    fallback_fps_threshold: float = 40.0
     suspicious_fps_threshold: float = 120.0
     min_duration_sec_on_suspicious_fps: float = 5.0
     dataset_burst_gap_frames: int = 5

@@ -10,6 +10,7 @@ from thermal_data_engine.agent_tools.inspect import (
     recent_runs,
     upload_summary,
     validate_ultralytics_package,
+    validate_video_clip_package,
 )
 
 
@@ -239,4 +240,70 @@ def test_validate_ultralytics_package_accepts_mapping_style_names(tmp_path):
 
     assert result["ok"] is True
     assert result["dataset_fields"]["names"] == "0: person"
+    assert result["errors"] == []
+
+
+def test_validate_video_clip_package_reports_ready_package(tmp_path):
+    package_root = tmp_path / "video-package"
+    clip_dir = package_root / "clips" / "01_alpha__clip-alpha"
+    clip_dir.mkdir(parents=True, exist_ok=True)
+    (clip_dir / "clip.mp4").write_bytes(b"mp4")
+    (clip_dir / "detections.parquet").write_bytes(b"parquet")
+    (clip_dir / "tracks.parquet").write_bytes(b"parquet")
+    (clip_dir / "clip_manifest.json").write_text(
+        json.dumps(
+            {
+                "clip_id": "clip-alpha",
+                "run_id": "run-alpha",
+                "vision_job_id": "job-alpha",
+                "track_count": 1,
+                "detection_count": 3,
+                "tracker_type": "iou_greedy_v1",
+                "selected": True,
+            }
+        )
+    )
+    (package_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "package_type": "thermal_video_clip_dataset",
+                "package_version": "v1",
+                "source_count": 1,
+                "clip_count": 1,
+                "sources": [
+                    {
+                        "source_path": "/tmp/alpha.mp4",
+                        "clip_id": "clip-alpha",
+                        "run_id": "run-alpha",
+                        "vision_job_id": "job-alpha",
+                        "included_in_package": True,
+                    }
+                ],
+                "clips": [
+                    {
+                        "package_clip_id": "01_alpha__clip-alpha",
+                        "package_clip_dir": "clips/01_alpha__clip-alpha",
+                        "source_path": "/tmp/alpha.mp4",
+                        "clip_id": "clip-alpha",
+                        "run_id": "run-alpha",
+                        "vision_job_id": "job-alpha",
+                        "track_count": 1,
+                        "detection_count": 3,
+                        "artifacts": {
+                            "clip_path": "clips/01_alpha__clip-alpha/clip.mp4",
+                            "detections_path": "clips/01_alpha__clip-alpha/detections.parquet",
+                            "tracks_path": "clips/01_alpha__clip-alpha/tracks.parquet",
+                            "manifest_path": "clips/01_alpha__clip-alpha/clip_manifest.json",
+                        },
+                    }
+                ],
+            }
+        )
+    )
+
+    result = validate_video_clip_package(str(package_root))
+
+    assert result["ok"] is True
+    assert result["clip_count"] == 1
+    assert result["selected_source_count"] == 1
     assert result["errors"] == []

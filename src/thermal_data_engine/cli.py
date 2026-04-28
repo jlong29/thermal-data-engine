@@ -11,7 +11,10 @@ from thermal_data_engine.agent_tools.inspect import (
     recent_clips,
     recent_runs,
     validate_ultralytics_package,
+    validate_video_clip_package,
 )
+from thermal_data_engine.edge.pipeline import process_directory
+from thermal_data_engine.edge.pipeline import process_directory_video
 from thermal_data_engine.edge.pipeline import process_file
 from thermal_data_engine.edge.pipeline import smoke_test
 
@@ -26,6 +29,22 @@ def _build_parser() -> argparse.ArgumentParser:
     process_parser.add_argument("--policy-config", default="configs/data/clip_policy.yaml")
     process_parser.add_argument("--output-root", default="")
     process_parser.add_argument("--vision-api-url", default="")
+
+    process_dir_parser = subparsers.add_parser("process-directory")
+    process_dir_parser.add_argument("--source-dir", required=True)
+    process_dir_parser.add_argument("--edge-config", default="configs/edge/default.yaml")
+    process_dir_parser.add_argument("--policy-config", default="configs/data/clip_policy.yaml")
+    process_dir_parser.add_argument("--output-root", default="")
+    process_dir_parser.add_argument("--vision-api-url", default="")
+    process_dir_parser.add_argument("--package-name", default="")
+
+    process_dir_video_parser = subparsers.add_parser("process-directory-video")
+    process_dir_video_parser.add_argument("--source-dir", required=True)
+    process_dir_video_parser.add_argument("--edge-config", default="configs/edge/default.yaml")
+    process_dir_video_parser.add_argument("--policy-config", default="configs/data/clip_policy.yaml")
+    process_dir_video_parser.add_argument("--output-root", default="")
+    process_dir_video_parser.add_argument("--vision-api-url", default="")
+    process_dir_video_parser.add_argument("--package-name", default="")
 
     smoke_parser = subparsers.add_parser("smoke-test")
     smoke_parser.add_argument("--source", required=True)
@@ -64,6 +83,9 @@ def _build_parser() -> argparse.ArgumentParser:
     ultralytics_parser = inspect_subparsers.add_parser("ultralytics-package")
     ultralytics_parser.add_argument("--path", required=True)
 
+    video_package_parser = inspect_subparsers.add_parser("video-package")
+    video_package_parser.add_argument("--path", required=True)
+
     runs_parser = inspect_subparsers.add_parser("runs")
     runs_parser.add_argument("--root", required=True)
     runs_parser.add_argument("--limit", type=int, default=5)
@@ -86,6 +108,30 @@ def main() -> None:
             policy_config_path=args.policy_config,
             output_root_override=args.output_root,
             vision_api_url_override=args.vision_api_url,
+        )
+        _print_json(result)
+        return
+
+    if args.command == "process-directory":
+        result = process_directory(
+            source_dir=args.source_dir,
+            edge_config_path=args.edge_config,
+            policy_config_path=args.policy_config,
+            output_root_override=args.output_root,
+            vision_api_url_override=args.vision_api_url,
+            package_name=args.package_name,
+        )
+        _print_json(result)
+        return
+
+    if args.command == "process-directory-video":
+        result = process_directory_video(
+            source_dir=args.source_dir,
+            edge_config_path=args.edge_config,
+            policy_config_path=args.policy_config,
+            output_root_override=args.output_root,
+            vision_api_url_override=args.vision_api_url,
+            package_name=args.package_name,
         )
         _print_json(result)
         return
@@ -126,6 +172,9 @@ def main() -> None:
             return
         if args.inspect_command == "ultralytics-package":
             _print_json(validate_ultralytics_package(args.path))
+            return
+        if args.inspect_command == "video-package":
+            _print_json(validate_video_clip_package(args.path))
             return
         if args.inspect_command == "runs":
             _print_json(recent_runs(args.root, limit=args.limit))

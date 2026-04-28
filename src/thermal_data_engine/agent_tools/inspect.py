@@ -280,6 +280,125 @@ def validate_ultralytics_package(path: str) -> Dict[str, Any]:
     }
 
 
+def validate_video_clip_package(path: str) -> Dict[str, Any]:
+    package_root = Path(path)
+    errors = []
+    warnings = []
+    manifest_path = package_root / "manifest.json"
+    clips_root = package_root / "clips"
+    manifest = {}
+    clip_entries = []
+    source_entries = []
+
+    for required_path in (package_root, manifest_path, clips_root):
+        if not required_path.exists():
+            errors.append("missing required path: %s" % str(required_path))
+
+    if manifest_path.exists():
+        manifest = read_json(manifest_path)
+        clip_entries = manifest.get("clips") or []
+        source_entries = manifest.get("sources") or []
+        if manifest.get("package_type") != "thermal_video_clip_dataset":
+            errors.append("manifest.json package_type must be thermal_video_clip_dataset")
+        if not manifest.get("package_version"):
+            errors.append("manifest.json missing required key: package_version")
+        if not isinstance(clip_entries, list):
+            errors.append("manifest.json clips must be a list")
+            clip_entries = []
+        if not isinstance(source_entries, list):
+            errors.append("manifest.json sources must be a list")
+            source_entries = []
+
+    clip_count = 0
+    selected_source_count = 0
+    skipped_source_count = 0
+
+    for item in source_entries:
+        if item.get("included_in_package"):
+            selected_source_count += 1
+        else:
+            skipped_source_count += 1
+
+    for index, item in enumerate(clip_entries, start=1):
+        package_clip_id = item.get("package_clip_id")
+        if not package_clip_id:
+            errors.append("clips[%d] missing required key: package_clip_id" % index)
+            continue
+        package_clip_dir = item.get("package_clip_dir")
+        if not package_clip_dir:
+            errors.append("clips[%d] missing required key: package_clip_dir" % index)
+            continue
+
+        clip_dir = package_root / package_clip_dir
+        if not clip_dir.exists():
+            errors.append("clip directory missing: %s" % str(clip_dir))
+
+        artifacts = item.get("artifacts") or {}
+        expected_artifacts = {
+            "clip_path": "clip.mp4",
+            "detections_path": "detections.parquet",
+            "tracks_path": "tracks.parquet",
+            "manifest_path": "clip_manifest.json",
+        }
+
+        resolved_artifacts = {}
+        for key, filename in expected_artifacts.items():
+            relative_path = artifacts.get(key)
+            if not relative_path:
+                errors.append("clips[%d] missing artifact path: %s" % (index, key))
+                continue
+            artifact_path = package_root / relative_path
+            resolved_artifacts[key] = artifact_path
+            if not artifact_path.exists():
+                errors.append("missing clip artifact: %s" % str(artifact_path))
+            elif artifact_path.name != filename:
+                warnings.append("unexpected artifact filename for %s: %s" % (key, str(artifact_path)))
+
+        clip_manifest_path = resolved_artifacts.get("manifest_path")
+        if clip_manifest_path is not None and clip_manifest_path.exists():
+            clip_manifest = read_json(clip_manifest_path)
+            for key in ("clip_id", "run_id", "vision_job_id", "track_count", "detection_count", "tracker_type"):
+                if key not in clip_manifest:
+                    errors.append("clip manifest missing required key %s: %s" % (key, str(clip_manifest_path)))
+            if clip_manifest.get("clip_id") != item.get("clip_id"):
+                errors.append("clip manifest clip_id mismatch for %s" % package_clip_id)
+            if clip_manifest.get("run_id") != item.get("run_id"):
+                errors.append("clip manifest run_id mismatch for %s" % package_clip_id)
+            if clip_manifest.get("vision_job_id") != item.get("vision_job_id"):
+                errors.append("clip manifest vision_job_id mismatch for %s" % package_clip_id)
+            if clip_manifest.get("track_count") != item.get("track_count"):
+                errors.append("clip manifest track_count mismatch for %s" % package_clip_id)
+            if clip_manifest.get("detection_count") != item.get("detection_count"):
+                errors.append("clip manifest detection_count mismatch for %s" % package_clip_id)
+            if not clip_manifest.get("selected", False):
+                warnings.append("clip manifest is not marked selected: %s" % package_clip_id)
+
+        clip_count += 1
+
+    if manifest:
+        if manifest.get("source_count") != len(source_entries):
+            errors.append("manifest source_count does not match sources length")
+        if manifest.get("clip_count") != len(clip_entries):
+            errors.append("manifest clip_count does not match clips length")
+
+    if clip_count == 0:
+        warnings.append("package contains no included clips")
+
+    return {
+        "ok": not errors,
+        "package_root": str(package_root),
+        "manifest_path": str(manifest_path),
+        "package_type": manifest.get("package_type"),
+        "package_version": manifest.get("package_version"),
+        "source_count": len(source_entries),
+        "clip_count": clip_count,
+        "selected_source_count": selected_source_count,
+        "skipped_source_count": skipped_source_count,
+        "errors": errors,
+        "warnings": warnings,
+    }
+
+
 def edge_status(root: str) -> Dict[str, Any]:
     root_path = Path(root)
     bundle_root = root_path / "bundles"

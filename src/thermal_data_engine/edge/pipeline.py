@@ -1,4 +1,6 @@
 import hashlib
+import re
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -12,6 +14,10 @@ from thermal_data_engine.edge.summarizer import summarize_tracks
 from thermal_data_engine.edge.tracking import assign_track_ids
 from thermal_data_engine.edge.upload import upload_bundle
 from thermal_data_engine.vision_api.client import VisionApiClient
+
+
+_VIDEO_SUFFIXES = (".mp4", ".mov", ".m4v", ".avi", ".mkv")
+_PACKAGE_BUNDLE_FILENAMES = ("clip.mp4", "detections.parquet", "tracks.parquet", "clip_manifest.json")
 
 
 def _clip_id_for_source(source_path: Path) -> str:
@@ -45,16 +51,23 @@ def _resolve_windowing(config: EdgeConfig, source_path: Path) -> Dict[str, Any]:
 
     decision["source_probe"] = source_probe
     fps = source_probe.get("fps")
+    fallback_fps = vision.fallback_fps if vision.fallback_fps > 0 else None
     min_duration_sec = vision.min_duration_sec_on_suspicious_fps
-    if (
-        vision.max_duration_sec is None
-        and vision.max_frames is not None
-        and fps is not None
-        and fps >= vision.suspicious_fps_threshold
-        and min_duration_sec > 0
-    ):
-        implied_window_sec = float(vision.max_frames) / float(fps)
-        if implied_window_sec < min_duration_sec:
+    if vision.max_duration_sec is None and vision.max_frames is not None:
+        if fps is None or fps <= 0:
+            if fallback_fps is not None:
+                derived_duration_sec = float(vision.max_frames) / float(fallback_fps)
+                payload_overrides["max_frames"] = None
+                payload_overrides["max_duration_sec"] = derived_duration_sec
+                decision = {
+                    "mode": "auto_duration_override",
+                    "reason": "missing_fps_using_fallback",
+                    "source_probe": source_probe,
+                    "fallback_fps": fallback_fps,
+                    "derived_duration_sec": derived_duration_sec,
+                }
+        elif fps >= vision.suspicious_fps_threshold and min_duration_sec > 0:
+            implied_window_sec = float(vision.max_frames) / float(fps)
             payload_overrides["max_frames"] = None
             payload_overrides["max_duration_sec"] = min_duration_sec
             decision = {
@@ -63,6 +76,19 @@ def _resolve_windowing(config: EdgeConfig, source_path: Path) -> Dict[str, Any]:
                 "source_probe": source_probe,
                 "implied_window_sec": implied_window_sec,
                 "min_duration_sec_on_suspicious_fps": min_duration_sec,
+            }
+        elif fallback_fps is not None and fps >= vision.fallback_fps_threshold:
+            derived_duration_sec = float(vision.max_frames) / float(fallback_fps)
+            payload_overrides["max_frames"] = None
+            payload_overrides["max_duration_sec"] = derived_duration_sec
+            decision = {
+                "mode": "auto_duration_override",
+                "reason": "high_fps_using_fallback",
+                "source_probe": source_probe,
+                "reported_fps": fps,
+                "fallback_fps": fallback_fps,
+                "fallback_fps_threshold": vision.fallback_fps_threshold,
+                "derived_duration_sec": derived_duration_sec,
             }
 
     return {"payload_overrides": payload_overrides, "decision": decision}
@@ -103,6 +129,297 @@ def _resolve_frame_window(frame_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _write_dataset_yaml(dataset_root: Path, class_name: str) -> None:
+    yaml_text = "path: .\ntrain: splits/train.txt\nval: splits/val.txt\nnames:\n  0: {}\n".format(class_name)
+    (dataset_root / "dataset.yaml").write_text(yaml_text)
+
+
+def _list_video_sources(source_dir: Path) -> List[Path]:
+    if not source_dir.exists() or not source_dir.is_dir():
+        raise NotADirectoryError("SOURCE_DIR_NOT_FOUND: {}".format(str(source_dir)))
+    sources = [
+        path
+        for path in sorted(source_dir.iterdir())
+        if path.is_file() and path.suffix.lower() in _VIDEO_SUFFIXES
+    ]
+    if not sources:
+        raise FileNotFoundError("NO_VIDEO_SOURCES_FOUND: {}".format(str(source_dir)))
+    return sources
+
+
+def _split_entries(dataset_root: Path, split_name: str) -> List[str]:
+    split_path = dataset_root / "splits" / "{}.txt".format(split_name)
+    if not split_path.exists():
+        raise FileNotFoundError("DATASET_SPLIT_MISSING: {}".format(str(split_path)))
+    return [line.strip() for line in split_path.read_text().splitlines() if line.strip()]
+
+
+def _label_path_for_image(dataset_root: Path, image_rel_path: str) -> Path:
+    image_rel = Path(image_rel_path)
+    if image_rel.parts and image_rel.parts[0] == "images":
+        image_rel = Path(*image_rel.parts[1:])
+    return dataset_root / "labels" / image_rel.with_suffix(".txt")
+
+
+def _copy_split_entry(dataset_root: Path, image_rel_path: str, destination_root: Path, file_prefix: str) -> str:
+    source_image_path = dataset_root / image_rel_path
+    if not source_image_path.exists():
+        raise FileNotFoundError("DATASET_IMAGE_MISSING: {}".format(str(source_image_path)))
+
+    source_label_path = _label_path_for_image(dataset_root, image_rel_path)
+    if not source_label_path.exists():
+        raise FileNotFoundError("DATASET_LABEL_MISSING: {}".format(str(source_label_path)))
+
+    destination_name = "{}__{}".format(file_prefix, source_image_path.name)
+    destination_image_rel = Path("images") / destination_name
+    destination_label_rel = Path("labels") / Path(destination_name).with_suffix(".txt")
+    destination_image_path = destination_root / destination_image_rel
+    destination_label_path = destination_root / destination_label_rel
+
+    if destination_image_path.exists() or destination_label_path.exists():
+        raise RuntimeError("DATASET_ENTRY_COLLISION: {}".format(destination_name))
+
+    destination_image_path.parent.mkdir(parents=True, exist_ok=True)
+    destination_label_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_image_path, destination_image_path)
+    shutil.copy2(source_label_path, destination_label_path)
+    return str(destination_image_rel).replace("\\", "/")
+
+
+def _package_id_for_directory(source_dir: Path) -> str:
+    return "{}-{}".format(source_dir.name, utc_now_iso().replace(":", "").replace("-", ""))
+
+
+def _slug_fragment(value: str) -> str:
+    text = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip())
+    return text.strip("._-") or "item"
+
+
+def _package_clip_dir_name(index: int, source_path: Path, clip_id: str) -> str:
+    return "{:02d}_{}__{}".format(index, _slug_fragment(source_path.stem), _slug_fragment(clip_id))
+
+
+def _copy_bundle_artifacts(bundle_dir: Path, destination_dir: Path) -> Dict[str, str]:
+    ensure_dir(destination_dir)
+    copied_paths = {}
+    for filename in _PACKAGE_BUNDLE_FILENAMES:
+        source_path = bundle_dir / filename
+        if not source_path.exists():
+            raise FileNotFoundError("BUNDLE_ARTIFACT_MISSING: {}".format(str(source_path)))
+        destination_path = destination_dir / filename
+        shutil.copy2(source_path, destination_path)
+        copied_paths[filename] = str(destination_path)
+    return copied_paths
+
+
+def _bundle_manifest_path(bundle_dir: Path) -> Path:
+    return bundle_dir / "clip_manifest.json"
+
+
+def _combine_source_datasets(package_root: Path, batch_id: str, source_dir: Path, source_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    ensure_dir(package_root / "images")
+    ensure_dir(package_root / "labels")
+    splits_dir = ensure_dir(package_root / "splits")
+
+    combined_train = []
+    combined_val = []
+    combined_entries = []
+    package_sources = []
+    total_target_detections = 0
+    total_frames_with_target_detections = 0
+    class_name = "person"
+
+    for index, item in enumerate(source_results, start=1):
+        dataset_root = Path(item["dataset_root"])
+        dataset_manifest = item["dataset_manifest"]
+        class_map = dataset_manifest.get("class_map") or {"0": class_name}
+        source_class_name = class_map.get("0") or dataset_manifest.get("target_class_name") or class_name
+        if source_class_name != class_name:
+            raise RuntimeError(
+                "DATASET_CLASS_MISMATCH: expected {} but found {} in {}".format(
+                    class_name, source_class_name, str(dataset_root)
+                )
+            )
+
+        train_entries = _split_entries(dataset_root, "train")
+        val_entries = _split_entries(dataset_root, "val")
+        prefix = "{:02d}_{}".format(index, Path(item["source_path"]).stem)
+        remapped_entries = {}
+
+        for split_name, entries, destination in (
+            ("train", train_entries, combined_train),
+            ("val", val_entries, combined_val),
+        ):
+            for entry in entries:
+                remapped = _copy_split_entry(dataset_root, entry, package_root, prefix)
+                remapped_entries[entry] = {"image_path": remapped, "split": split_name}
+                destination.append(remapped)
+
+        dataset_entries = dataset_manifest.get("entries") or []
+        for dataset_entry in dataset_entries:
+            original_image_path = dataset_entry.get("image_path")
+            remapped = remapped_entries.get(original_image_path)
+            if remapped is None:
+                continue
+            combined_entries.append(
+                {
+                    "source_path": item["source_path"],
+                    "source_clip_id": item["clip_id"],
+                    "source_run_id": item["run_id"],
+                    "source_vision_job_id": item["vision_job_id"],
+                    "source_dataset_root": str(dataset_root),
+                    "source_image_path": original_image_path,
+                    "source_label_path": dataset_entry.get("label_path"),
+                    "image_path": remapped["image_path"],
+                    "label_path": remapped["image_path"].replace("images/", "labels/").rsplit(".", 1)[0] + ".txt",
+                    "split": remapped["split"],
+                    "frame_num": dataset_entry.get("frame_num"),
+                    "timestamp_sec": dataset_entry.get("timestamp_sec"),
+                    "source_timestamp_sec": dataset_entry.get("source_timestamp_sec"),
+                    "target_detection_count": dataset_entry.get("target_detection_count", 0),
+                }
+            )
+
+        total_target_detections += int(dataset_manifest.get("total_target_detections", 0))
+        total_frames_with_target_detections += int(dataset_manifest.get("frames_with_target_detections", 0))
+        package_sources.append(
+            {
+                "source_path": item["source_path"],
+                "clip_id": item["clip_id"],
+                "run_id": item["run_id"],
+                "vision_job_id": item["vision_job_id"],
+                "selected": item["selected"],
+                "selection_reason": item["selection_reason"],
+                "dataset_root": str(dataset_root),
+                "dataset_manifest_path": item["dataset_manifest_path"],
+                "image_count": int(dataset_manifest.get("image_count", 0)),
+                "label_count": int(dataset_manifest.get("label_count", 0)),
+                "train_image_count": int(dataset_manifest.get("train_image_count", 0)),
+                "val_image_count": int(dataset_manifest.get("val_image_count", 0)),
+            }
+        )
+
+    (splits_dir / "train.txt").write_text("\n".join(combined_train) + ("\n" if combined_train else ""))
+    (splits_dir / "val.txt").write_text("\n".join(combined_val) + ("\n" if combined_val else ""))
+    _write_dataset_yaml(package_root, class_name)
+
+    manifest = {
+        "created_at": utc_now_iso(),
+        "package_id": batch_id,
+        "target_class_name": class_name,
+        "class_map": {"0": class_name},
+        "source_directory": str(source_dir),
+        "source_count": len(package_sources),
+        "image_count": len(combined_train) + len(combined_val),
+        "label_count": len(combined_train) + len(combined_val),
+        "train_image_count": len(combined_train),
+        "val_image_count": len(combined_val),
+        "frames_with_target_detections": total_frames_with_target_detections,
+        "total_target_detections": total_target_detections,
+        "sources": package_sources,
+        "entries": combined_entries,
+    }
+    write_json(package_root / "manifest.json", manifest)
+    return manifest
+
+
+def _combine_video_packages(package_root: Path, batch_id: str, source_dir: Path, source_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    clips_root = ensure_dir(package_root / "clips")
+
+    package_sources = []
+    package_clips = []
+
+    for index, item in enumerate(source_results, start=1):
+        source_path = Path(item["source_path"])
+        bundle_dir = Path(item["bundle_dir"])
+        source_summary = {
+            "source_path": item["source_path"],
+            "clip_id": item["clip_id"],
+            "run_id": item["run_id"],
+            "run_dir": item["run_dir"],
+            "vision_job_id": item["vision_job_id"],
+            "selected": item["selected"],
+            "selection_reason": item["selection_reason"],
+            "frame_count": int(item.get("frame_count", 0)),
+            "detection_count": int(item.get("detection_count", 0)),
+            "track_count": int(item.get("track_count", 0)),
+            "bundle_dir": item["bundle_dir"],
+            "included_in_package": False,
+        }
+
+        if not item["selected"]:
+            package_sources.append(source_summary)
+            continue
+
+        bundle_manifest_path = _bundle_manifest_path(bundle_dir)
+        if not bundle_manifest_path.exists():
+            raise FileNotFoundError("SELECTED_BUNDLE_MANIFEST_NOT_FOUND: {}".format(str(bundle_manifest_path)))
+
+        clip_manifest = read_json(bundle_manifest_path)
+        package_clip_id = _package_clip_dir_name(index, source_path, item["clip_id"])
+        package_clip_dir = clips_root / package_clip_id
+        if package_clip_dir.exists():
+            raise RuntimeError("VIDEO_PACKAGE_CLIP_ALREADY_EXISTS: {}".format(str(package_clip_dir)))
+
+        _copy_bundle_artifacts(bundle_dir, package_clip_dir)
+        relative_clip_dir = str(package_clip_dir.relative_to(package_root)).replace("\\", "/")
+        artifact_paths = {
+            "clip_path": "{}/clip.mp4".format(relative_clip_dir),
+            "detections_path": "{}/detections.parquet".format(relative_clip_dir),
+            "tracks_path": "{}/tracks.parquet".format(relative_clip_dir),
+            "manifest_path": "{}/clip_manifest.json".format(relative_clip_dir),
+        }
+
+        source_summary.update(
+            {
+                "included_in_package": True,
+                "package_clip_id": package_clip_id,
+                "package_clip_dir": relative_clip_dir,
+                "bundle_manifest_path": str(bundle_manifest_path),
+            }
+        )
+        package_sources.append(source_summary)
+        package_clips.append(
+            {
+                "package_clip_id": package_clip_id,
+                "package_clip_dir": relative_clip_dir,
+                "source_path": item["source_path"],
+                "clip_id": item["clip_id"],
+                "run_id": item["run_id"],
+                "run_dir": item["run_dir"],
+                "vision_job_id": item["vision_job_id"],
+                "selection_reason": item["selection_reason"],
+                "created_at": clip_manifest.get("created_at"),
+                "start_ts": clip_manifest.get("start_ts"),
+                "end_ts": clip_manifest.get("end_ts"),
+                "fps": clip_manifest.get("fps"),
+                "frame_count": clip_manifest.get("frame_count"),
+                "width": clip_manifest.get("width"),
+                "height": clip_manifest.get("height"),
+                "detection_count": clip_manifest.get("detection_count"),
+                "track_count": clip_manifest.get("track_count"),
+                "model_version": clip_manifest.get("model_version"),
+                "tracker_type": clip_manifest.get("tracker_type"),
+                "artifacts": artifact_paths,
+            }
+        )
+
+    manifest = {
+        "package_type": "thermal_video_clip_dataset",
+        "package_version": "v1",
+        "created_at": utc_now_iso(),
+        "package_id": batch_id,
+        "source_directory": str(source_dir),
+        "source_count": len(package_sources),
+        "clip_count": len(package_clips),
+        "bundle_contract": list(_PACKAGE_BUNDLE_FILENAMES),
+        "sources": package_sources,
+        "clips": package_clips,
+    }
+    write_json(package_root / "manifest.json", manifest)
+    return manifest
+
+
 def process_file(
     source: str,
     edge_config_path: str,
@@ -136,6 +453,8 @@ def process_file(
     client = VisionApiClient(edge_config.vision_api_url)
     job_payload, windowing = _build_job_payload(edge_config, source_path)
     accepted = client.submit_yolo_job(job_payload)
+    write_json(run_dir / "vision_job_request.json", job_payload)
+    write_json(run_dir / "vision_job_accepted.json", accepted)
     result = client.wait_for_job(
         accepted["job_id"],
         poll_interval_sec=edge_config.poll_interval_sec,
@@ -177,8 +496,6 @@ def process_file(
         extra={"vision_job_manifest": job_manifest},
     )
 
-    write_json(run_dir / "vision_job_accepted.json", accepted)
-    write_json(run_dir / "vision_job_request.json", job_payload)
     write_json(run_dir / "vision_job_status.json", result.status_payload)
     write_json(run_dir / "vision_job_manifest.json", job_manifest)
 
@@ -307,4 +624,175 @@ def smoke_test(
         "requested_window": requested_window,
         "job_detection_summary": job_detection_summary,
         "windowing_decision": pipeline_summary.get("windowing_decision"),
+    }
+
+
+def process_directory(
+    source_dir: str,
+    edge_config_path: str,
+    policy_config_path: str,
+    output_root_override: str = "",
+    vision_api_url_override: str = "",
+    package_name: str = "",
+) -> Dict[str, Any]:
+    edge_overrides = {
+        "vision_request": {"output_mode": "dataset_package", "generate_preview_video": False},
+    }
+    if output_root_override:
+        edge_overrides["output_root"] = output_root_override
+    if vision_api_url_override:
+        edge_overrides["vision_api_url"] = vision_api_url_override
+
+    edge_config = load_edge_config(edge_config_path, overrides=edge_overrides)
+    source_dir_path = expand_path(source_dir)
+    sources = _list_video_sources(source_dir_path)
+    output_root = expand_path(edge_config.output_root)
+    package_id = package_name or _package_id_for_directory(source_dir_path)
+    package_root = output_root / "ultralytics_packages" / package_id
+    if package_root.exists():
+        raise RuntimeError("PACKAGE_ROOT_ALREADY_EXISTS: {}".format(str(package_root)))
+
+    source_results = []
+    for source_path in sources:
+        result = process_file(
+            source=str(source_path),
+            edge_config_path=edge_config_path,
+            policy_config_path=policy_config_path,
+            output_root_override=output_root_override,
+            vision_api_url_override=vision_api_url_override,
+            edge_config_overrides={"vision_request": edge_overrides["vision_request"]},
+        )
+        run_dir = Path(result["run_dir"])
+        vision_job_manifest = read_json(run_dir / "vision_job_manifest.json")
+        dataset_manifest_path_value = vision_job_manifest.get("dataset_manifest_path")
+        if not dataset_manifest_path_value:
+            raise RuntimeError("VISION_API_DATASET_MANIFEST_MISSING: {}".format(str(run_dir / "vision_job_manifest.json")))
+        dataset_manifest_path = Path(dataset_manifest_path_value)
+        if not dataset_manifest_path.exists():
+            raise FileNotFoundError("VISION_API_DATASET_MANIFEST_NOT_FOUND: {}".format(str(dataset_manifest_path)))
+        source_results.append(
+            {
+                "source_path": str(source_path),
+                "clip_id": result["clip_id"],
+                "run_id": result["run_id"],
+                "vision_job_id": result["vision_job_id"],
+                "selected": result["selected"],
+                "selection_reason": result["selection_reason"],
+                "dataset_root": str(dataset_manifest_path.parent),
+                "dataset_manifest_path": str(dataset_manifest_path),
+                "dataset_manifest": read_json(dataset_manifest_path),
+            }
+        )
+
+    combined_manifest = _combine_source_datasets(
+        package_root=package_root,
+        batch_id=package_id,
+        source_dir=source_dir_path,
+        source_results=source_results,
+    )
+    return {
+        "ok": True,
+        "source_dir": str(source_dir_path),
+        "source_count": len(source_results),
+        "package_id": package_id,
+        "package_root": str(package_root),
+        "manifest_path": str(package_root / "manifest.json"),
+        "image_count": combined_manifest["image_count"],
+        "label_count": combined_manifest["label_count"],
+        "train_image_count": combined_manifest["train_image_count"],
+        "val_image_count": combined_manifest["val_image_count"],
+        "sources": [
+            {
+                "source_path": item["source_path"],
+                "clip_id": item["clip_id"],
+                "run_id": item["run_id"],
+                "vision_job_id": item["vision_job_id"],
+                "dataset_manifest_path": item["dataset_manifest_path"],
+                "selected": item["selected"],
+                "selection_reason": item["selection_reason"],
+            }
+            for item in source_results
+        ],
+    }
+
+
+def process_directory_video(
+    source_dir: str,
+    edge_config_path: str,
+    policy_config_path: str,
+    output_root_override: str = "",
+    vision_api_url_override: str = "",
+    package_name: str = "",
+) -> Dict[str, Any]:
+    edge_overrides = {
+        "vision_request": {"output_mode": "dataset_package", "generate_preview_video": False},
+    }
+    if output_root_override:
+        edge_overrides["output_root"] = output_root_override
+    if vision_api_url_override:
+        edge_overrides["vision_api_url"] = vision_api_url_override
+
+    edge_config = load_edge_config(edge_config_path, overrides=edge_overrides)
+    source_dir_path = expand_path(source_dir)
+    sources = _list_video_sources(source_dir_path)
+    output_root = expand_path(edge_config.output_root)
+    package_id = package_name or _package_id_for_directory(source_dir_path)
+    package_root = output_root / "video_packages" / package_id
+    if package_root.exists():
+        raise RuntimeError("VIDEO_PACKAGE_ROOT_ALREADY_EXISTS: {}".format(str(package_root)))
+
+    source_results = []
+    for source_path in sources:
+        result = process_file(
+            source=str(source_path),
+            edge_config_path=edge_config_path,
+            policy_config_path=policy_config_path,
+            output_root_override=output_root_override,
+            vision_api_url_override=vision_api_url_override,
+            edge_config_overrides={"vision_request": edge_overrides["vision_request"]},
+        )
+        source_results.append(
+            {
+                "source_path": str(source_path),
+                "clip_id": result["clip_id"],
+                "run_id": result["run_id"],
+                "run_dir": result["run_dir"],
+                "selected": result["selected"],
+                "selection_reason": result["selection_reason"],
+                "bundle_dir": result["bundle_dir"],
+                "vision_job_id": result["vision_job_id"],
+                "frame_count": result["frame_count"],
+                "detection_count": result["detection_count"],
+                "track_count": result["track_count"],
+                "upload": result.get("upload"),
+            }
+        )
+
+    combined_manifest = _combine_video_packages(
+        package_root=package_root,
+        batch_id=package_id,
+        source_dir=source_dir_path,
+        source_results=source_results,
+    )
+    return {
+        "ok": True,
+        "source_dir": str(source_dir_path),
+        "source_count": len(source_results),
+        "package_id": package_id,
+        "package_root": str(package_root),
+        "manifest_path": str(package_root / "manifest.json"),
+        "clip_count": combined_manifest["clip_count"],
+        "bundle_contract": combined_manifest["bundle_contract"],
+        "sources": [
+            {
+                "source_path": item["source_path"],
+                "clip_id": item["clip_id"],
+                "run_id": item["run_id"],
+                "vision_job_id": item["vision_job_id"],
+                "selected": item["selected"],
+                "selection_reason": item["selection_reason"],
+                "bundle_dir": item["bundle_dir"],
+            }
+            for item in source_results
+        ],
     }
