@@ -7,7 +7,8 @@ from typing import Any, Dict, Iterable, List, Optional
 
 
 WORKSPACE_ROOT = Path.home() / ".openclaw" / "workspace"
-DATASETS_ROOT = WORKSPACE_ROOT / "datasets"
+OPENCLAWINFO_ROOT = Path.home() / "openclawInfo"
+DATASETS_ROOT = OPENCLAWINFO_ROOT / "datasets"
 
 
 def ensure_dir(path: Path) -> Path:
