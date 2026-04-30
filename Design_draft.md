@@ -129,7 +129,7 @@ Implement the edge inference module that runs YOLO11m with tracking and emits pe
 
 Implement clip segmentation and bundle writing.
 
-**NOTE**: example videos may be found at ~/.openclaw/workspace/datasets/incoming. Use these videos for testing.
+**NOTE**: example videos may be found at ~/.openclawInfo/datasets/incoming. Use these videos for testing.
 
 ### Priority 4 — Selection policy
 
@@ -357,7 +357,7 @@ Recommended tests:
 * clip policy selection test
 * bundle roundtrip validity test
 
-**NOTE**: this is what the videos at ~/.openclaw/workspace/datasets/incoming can be used for
+**NOTE**: this is what the videos at ~/.openclawInfo/datasets/incoming can be used for
 
 ---
 

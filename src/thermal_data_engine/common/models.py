@@ -40,7 +40,7 @@ class UploadConfig:
 class EdgeConfig:
     device_id: str = "edge-device-local"
     vision_api_url: str = "http://127.0.0.1:8000"
-    output_root: str = "~/.openclaw/workspace/outputs/thermal_data_engine"
+    output_root: str = "~/.openclawInfo/outputs/thermal_data_engine"
     bundle_subdir: str = "bundles"
     run_subdir: str = "runs"
     upload_subdir: str = "uploads"
