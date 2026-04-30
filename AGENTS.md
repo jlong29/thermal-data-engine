@@ -44,8 +44,8 @@ Additional repo-specific rules:
 Avoid expensive traversal unless explicitly needed:
 - `.git/`
 - `.venv/`
-- `~/.openclaw/workspace/datasets/`
-- `~/.openclaw/workspace/outputs/`
+- `~/.openclawInfo/datasets/`
+- `~/.openclawInfo/outputs/`
 - `__pycache__/`
 
 Use targeted commands and keep output small.
@@ -62,14 +62,14 @@ python3 -m pip install -e .[dev]
 ### Main run path
 ```bash
 python3 -m thermal_data_engine.cli process-file \
-  --source ~/.openclaw/workspace/datasets/incoming/example.mp4 \
-  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine
+  --source ~/.openclawInfo/datasets/incoming/example.mp4 \
+  --output-root ~/.openclawInfo/outputs/thermal_data_engine
 ```
 
 ### Secondary workflows
 ```bash
-python3 -m thermal_data_engine.cli inspect recent --root ~/.openclaw/workspace/outputs/thermal_data_engine
-python3 -m thermal_data_engine.cli inspect ambiguous --root ~/.openclaw/workspace/outputs/thermal_data_engine
+python3 -m thermal_data_engine.cli inspect recent --root ~/.openclawInfo/outputs/thermal_data_engine
+python3 -m thermal_data_engine.cli inspect ambiguous --root ~/.openclawInfo/outputs/thermal_data_engine
 ```
 
 ### Validate

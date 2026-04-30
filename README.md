@@ -42,8 +42,8 @@ source .venv/bin/activate
 python -m pip install --upgrade pip setuptools wheel
 python -m pip install -e .[dev,parquet]
 python3 -m thermal_data_engine.cli smoke-test \
-  --source ~/.openclaw/workspace/datasets/incoming/example.mp4 \
-  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
+  --source ~/.openclawInfo/datasets/incoming/example.mp4 \
+  --output-root ~/.openclawInfo/outputs/thermal_data_engine \
   --vision-api-url http://127.0.0.1:8000 \
   --max-duration-sec 3.0
 ```
@@ -52,9 +52,9 @@ If you hit memory pressure during Xavier NX bring-up, retry with the lower-memor
 
 ```bash
 python3 -m thermal_data_engine.cli smoke-test \
-  --source ~/.openclaw/workspace/datasets/incoming/example.mp4 \
+  --source ~/.openclawInfo/datasets/incoming/example.mp4 \
   --edge-config configs/edge/low_memory.yaml \
-  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
+  --output-root ~/.openclawInfo/outputs/thermal_data_engine \
   --vision-api-url http://127.0.0.1:8000 \
   --use-edge-window
 ```
@@ -159,8 +159,8 @@ With the `thermal-data-engine` virtualenv active, process a file:
 
 ```bash
 python3 -m thermal_data_engine.cli process-file \
-  --source ~/.openclaw/workspace/datasets/incoming/example.mp4 \
-  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
+  --source ~/.openclawInfo/datasets/incoming/example.mp4 \
+  --output-root ~/.openclawInfo/outputs/thermal_data_engine \
   --vision-api-url http://127.0.0.1:8000
 ```
 
@@ -168,8 +168,8 @@ Process a whole folder of videos and assemble one training-facing Ultralytics pa
 
 ```bash
 python3 -m thermal_data_engine.cli process-directory \
-  --source-dir ~/.openclaw/workspace/datasets/incoming \
-  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
+  --source-dir ~/.openclawInfo/datasets/incoming \
+  --output-root ~/.openclawInfo/outputs/thermal_data_engine \
   --vision-api-url http://127.0.0.1:8000 \
   --package-name incoming-sample
 ```
@@ -180,9 +180,9 @@ Process a whole folder of videos and assemble one temporal video-clip package:
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m thermal_data_engine.cli process-directory-video \
-  --source-dir ~/.openclaw/workspace/datasets/incoming \
+  --source-dir ~/.openclawInfo/datasets/incoming \
   --edge-config configs/edge/training_sample.yaml \
-  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
+  --output-root ~/.openclawInfo/outputs/thermal_data_engine \
   --vision-api-url http://127.0.0.1:8000 \
   --package-name incoming-video-sample
 ```
@@ -193,8 +193,8 @@ Run a fast bounded smoke test:
 
 ```bash
 python3 -m thermal_data_engine.cli smoke-test \
-  --source ~/.openclaw/workspace/datasets/incoming/example.mp4 \
-  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
+  --source ~/.openclawInfo/datasets/incoming/example.mp4 \
+  --output-root ~/.openclawInfo/outputs/thermal_data_engine \
   --vision-api-url http://127.0.0.1:8000 \
   --max-duration-sec 3.0
 ```
@@ -203,9 +203,9 @@ Exercise the lower-memory profile directly during bring-up:
 
 ```bash
 python3 -m thermal_data_engine.cli smoke-test \
-  --source ~/.openclaw/workspace/datasets/incoming/example.mp4 \
+  --source ~/.openclawInfo/datasets/incoming/example.mp4 \
   --edge-config configs/edge/low_memory.yaml \
-  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
+  --output-root ~/.openclawInfo/outputs/thermal_data_engine \
   --vision-api-url http://127.0.0.1:8000 \
   --use-edge-window
 ```
@@ -216,9 +216,9 @@ For a denser training-oriented sample package, use the named profile below inste
 
 ```bash
 python3 -m thermal_data_engine.cli process-directory \
-  --source-dir ~/.openclaw/workspace/datasets/incoming \
+  --source-dir ~/.openclawInfo/datasets/incoming \
   --edge-config configs/edge/training_sample.yaml \
-  --output-root ~/.openclaw/workspace/outputs/thermal_data_engine \
+  --output-root ~/.openclawInfo/outputs/thermal_data_engine \
   --vision-api-url http://127.0.0.1:8000 \
   --package-name incoming-training-sample
 ```
@@ -228,14 +228,14 @@ That profile lowers detector confidence to `0.10`, runs a denser `frame_stride: 
 Inspect saved bundles:
 
 ```bash
-python3 -m thermal_data_engine.cli inspect recent --root ~/.openclaw/workspace/outputs/thermal_data_engine
-python3 -m thermal_data_engine.cli inspect ambiguous --root ~/.openclaw/workspace/outputs/thermal_data_engine
-python3 -m thermal_data_engine.cli inspect detector --root ~/.openclaw/workspace/outputs/thermal_data_engine
-python3 -m thermal_data_engine.cli inspect clip-artifacts --root ~/.openclaw/workspace/outputs/thermal_data_engine
-python3 -m thermal_data_engine.cli inspect edge-status --root ~/.openclaw/workspace/outputs/thermal_data_engine
-python3 -m thermal_data_engine.cli inspect runs --root ~/.openclaw/workspace/outputs/thermal_data_engine
-python3 -m thermal_data_engine.cli inspect ultralytics-package --path ~/.openclaw/workspace/outputs/inference_jobs/<job_id>/dataset
-python3 -m thermal_data_engine.cli inspect video-package --path ~/.openclaw/workspace/outputs/thermal_data_engine/video_packages/incoming-video-sample
+python3 -m thermal_data_engine.cli inspect recent --root ~/.openclawInfo/outputs/thermal_data_engine
+python3 -m thermal_data_engine.cli inspect ambiguous --root ~/.openclawInfo/outputs/thermal_data_engine
+python3 -m thermal_data_engine.cli inspect detector --root ~/.openclawInfo/outputs/thermal_data_engine
+python3 -m thermal_data_engine.cli inspect clip-artifacts --root ~/.openclawInfo/outputs/thermal_data_engine
+python3 -m thermal_data_engine.cli inspect edge-status --root ~/.openclawInfo/outputs/thermal_data_engine
+python3 -m thermal_data_engine.cli inspect runs --root ~/.openclawInfo/outputs/thermal_data_engine
+python3 -m thermal_data_engine.cli inspect ultralytics-package --path ~/.openclawInfo/outputs/inference_jobs/<job_id>/dataset
+python3 -m thermal_data_engine.cli inspect video-package --path ~/.openclawInfo/outputs/thermal_data_engine/video_packages/incoming-video-sample
 ```
 
 ## Output layout

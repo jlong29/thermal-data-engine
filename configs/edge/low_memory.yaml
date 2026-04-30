@@ -1,6 +1,6 @@
 device_id: "edge-device-local"
 vision_api_url: "http://127.0.0.1:8000"
-output_root: "~/.openclaw/workspace/outputs/thermal_data_engine"
+output_root: "~/.openclawInfo/outputs/thermal_data_engine"
 bundle_subdir: "bundles"
 run_subdir: "runs"
 upload_subdir: "uploads"

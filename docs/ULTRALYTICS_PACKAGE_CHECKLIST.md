@@ -34,7 +34,7 @@ Reference layout:
 
 ```bash
 python3 -m thermal_data_engine.cli inspect ultralytics-package \
-  --path ~/.openclaw/workspace/outputs/inference_jobs/<job_id>/dataset
+  --path ~/.openclawInfo/outputs/inference_jobs/<job_id>/dataset
 ```
 
 The helper is intentionally lightweight. It does not run Ultralytics itself. It gives a bounded structural readiness check before the hotter-machine load/train smoke test.
